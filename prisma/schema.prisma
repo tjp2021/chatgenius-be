@@ -11,4 +11,86 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model User {
+  id         String    @id
+  email      String?
+  name       String?
+  imageUrl   String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  // Relations
+  channels        Channel[]       @relation("CreatedChannels")
+  channelMembers  ChannelMember[]
+  messages        Message[]
+
+  @@map("users")
+}
+
+model Channel {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  type        ChannelType
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  // Relations
+  createdBy      User            @relation("CreatedChannels", fields: [createdById], references: [id])
+  members        ChannelMember[]
+  messages       Message[]
+
+  @@map("channels")
+}
+
+model ChannelMember {
+  channelId String
+  userId    String
+  role      MemberRole @default(MEMBER)
+  createdAt DateTime   @default(now())
+
+  // Relations
+  channel   Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, userId])
+  @@map("channel_members")
+}
+
+model Message {
+  id        String    @id @default(uuid())
+  content   String
+  channelId String
+  userId    String
+  parentId  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    Message?  @relation("ThreadReplies", fields: [parentId], references: [id])
+  replies   Message[] @relation("ThreadReplies")
+
+  @@map("messages")
+}
+
+enum ChannelType {
+  PUBLIC
+  PRIVATE
+  DM
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
 }
