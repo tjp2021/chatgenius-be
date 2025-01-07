@@ -30,6 +30,7 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly clerk = createClerkClient({ 
     secretKey: process.env.CLERK_SECRET_KEY 
   });
+  private onlineUsers = new Map<string, Set<string>>(); // userId -> Set of socket ids
 
   @WebSocketServer()
   server: Server;
@@ -39,11 +40,19 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly messageService: MessageService,
   ) {}
 
+  private updateUserPresence(userId: string, isOnline: boolean) {
+    // Broadcast to all clients
+    this.server.emit('presence:update', { userId, isOnline });
+  }
+
   async handleConnection(client: Socket) {
     try {
       const token = client.handshake.auth.token;
       if (!token) {
-        this.logger.warn('No token provided for socket connection');
+        this.logger.warn('Socket connection: No token provided', {
+          clientId: client.id,
+          handshake: client.handshake,
+        });
         throw new UnauthorizedException('No token provided');
       }
 
@@ -51,19 +60,44 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const { sub: userId } = await this.clerk.verifyToken(token);
       
       if (!userId) {
-        this.logger.warn('Invalid user ID from token');
+        this.logger.warn('Socket connection: Invalid user ID from token', {
+          clientId: client.id,
+          token: token.substring(0, 10) + '...',
+        });
         throw new UnauthorizedException('Invalid user ID');
       }
 
       // Store userId in socket data
       client.data.userId = userId;
       
+      // Update online status
+      if (!this.onlineUsers.has(userId)) {
+        this.onlineUsers.set(userId, new Set());
+      }
+      this.onlineUsers.get(userId)!.add(client.id);
+      
+      // If this is the first socket for this user, broadcast presence
+      if (this.onlineUsers.get(userId)!.size === 1) {
+        this.updateUserPresence(userId, true);
+      }
+      
       // Join user's personal room
       client.join(`user:${userId}`);
       
-      this.logger.log(`Client connected: ${userId}`);
+      this.logger.log('Socket connection: Client connected successfully', {
+        clientId: client.id,
+        userId,
+        rooms: Array.from(client.rooms),
+      });
     } catch (error) {
-      this.logger.error('Socket connection error:', error);
+      this.logger.error('Socket connection: Error during connection', {
+        clientId: client.id,
+        error: {
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
+        },
+      });
       client.disconnect();
     }
   }
@@ -72,9 +106,23 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = client.data.userId;
     if (!userId) return;
 
+    // Update online status
+    const userSockets = this.onlineUsers.get(userId);
+    if (userSockets) {
+      userSockets.delete(client.id);
+      // If this was the last socket for this user, broadcast offline status
+      if (userSockets.size === 0) {
+        this.onlineUsers.delete(userId);
+        this.updateUserPresence(userId, false);
+      }
+    }
+
     // Leave all rooms
     client.rooms.forEach(room => client.leave(room));
-    this.logger.log(`Client disconnected: ${userId}`);
+    this.logger.log('Socket disconnected:', {
+      userId,
+      remainingSockets: userSockets?.size || 0,
+    });
   }
 
   @SubscribeMessage('message:send')
@@ -85,30 +133,84 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }) {
     const userId = client.data.userId;
     if (!userId) {
+      this.logger.warn('Message send: No user ID in socket data', {
+        clientId: client.id,
+        payload,
+      });
       throw new UnauthorizedException('User not authenticated');
     }
 
-    const message = await this.messageService.createMessage(
-      payload.channelId,
+    this.logger.log('Message send: Attempting to create message', {
+      clientId: client.id,
       userId,
-      payload
-    );
+      channelId: payload.channelId,
+      hasParent: !!payload.parentId,
+    });
 
-    this.server.to(`channel:${payload.channelId}`).emit('message:new', message);
-    return message;
+    try {
+      const message = await this.messageService.createMessage(
+        payload.channelId,
+        userId,
+        payload
+      );
+
+      this.logger.log('Message send: Message created successfully', {
+        messageId: message.id,
+        channelId: payload.channelId,
+        userId,
+      });
+
+      // Emit to all clients in the channel
+      this.server.to(`channel:${payload.channelId}`).emit('message:new', message);
+      
+      this.logger.log('Message send: Broadcasted to channel', {
+        messageId: message.id,
+        channelId: payload.channelId,
+        room: `channel:${payload.channelId}`,
+      });
+
+      return message;
+    } catch (error) {
+      this.logger.error('Message send: Failed to create/broadcast message', {
+        error: {
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
+        },
+        payload,
+        userId,
+      });
+      throw error;
+    }
   }
 
   @SubscribeMessage('channel:join')
   async handleJoinChannel(client: Socket, channelId: string) {
     const userId = client.data.userId;
     if (!userId) {
+      this.logger.warn('Channel join: No user ID in socket data', {
+        clientId: client.id,
+        channelId,
+      });
       throw new UnauthorizedException('User not authenticated');
     }
 
     try {
+      this.logger.log('Channel join: Attempting to join channel', {
+        clientId: client.id,
+        userId,
+        channelId,
+      });
+
       const channel = await this.channelsService.findOne(userId, channelId);
       client.join(`channel:${channelId}`);
-      this.logger.log(`User ${userId} joined channel ${channelId}`);
+      
+      this.logger.log('Channel join: Successfully joined channel', {
+        clientId: client.id,
+        userId,
+        channelId,
+        rooms: Array.from(client.rooms),
+      });
       
       // Notify channel members of new join
       this.server.to(`channel:${channelId}`).emit('channel:member_joined', {
@@ -116,8 +218,21 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
         userId,
         timestamp: new Date(),
       });
+
+      this.logger.log('Channel join: Broadcasted join event', {
+        channelId,
+        userId,
+      });
     } catch (error) {
-      this.logger.warn(`User ${userId} attempted to join unauthorized channel ${channelId}`);
+      this.logger.error('Channel join: Failed to join channel', {
+        error: {
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
+        },
+        channelId,
+        userId,
+      });
       throw error;
     }
   }
@@ -168,5 +283,14 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
       userId,
       timestamp: new Date(),
     });
+  }
+
+  @SubscribeMessage('presence:get_online_users')
+  handleGetOnlineUsers() {
+    const onlineStatus: Record<string, boolean> = {};
+    for (const [userId, sockets] of this.onlineUsers.entries()) {
+      onlineStatus[userId] = sockets.size > 0;
+    }
+    return onlineStatus;
   }
 } 
