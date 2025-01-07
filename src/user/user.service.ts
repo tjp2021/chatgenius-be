@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class UserService {
   constructor(private prisma: PrismaService) {}
 
-  async createUser(data: { id: string; email: string; username: string }) {
+  async createUser(data: { id: string; email: string; username: string; imageUrl?: string }) {
     return this.prisma.user.upsert({
       where: {
         id: data.id
@@ -14,10 +14,12 @@ export class UserService {
         id: data.id,
         email: data.email,
         name: data.username,
+        imageUrl: data.imageUrl,
       },
       update: {
         email: data.email,
         name: data.username,
+        imageUrl: data.imageUrl,
       }
     });
   }
@@ -40,6 +42,21 @@ export class UserService {
       data: {
         name: data.name,
         imageUrl: data.imageUrl,
+      },
+    });
+  }
+
+  async deleteUser(id: string) {
+    return this.prisma.user.delete({
+      where: { id },
+    });
+  }
+
+  async updateUserOnlineStatus(id: string, isOnline: boolean) {
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        isOnline,
       },
     });
   }
