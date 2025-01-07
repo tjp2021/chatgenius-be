@@ -289,7 +289,7 @@ export class ChannelsService {
             {
               members: {
                 some: {
-                  userId: userId
+                  userId
                 }
               }
             }
@@ -319,7 +319,7 @@ export class ChannelsService {
           },
           members: {
             where: {
-              userId: userId
+              userId
             },
             select: {
               lastReadAt: true,

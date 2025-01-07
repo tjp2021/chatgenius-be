@@ -1,4 +1,4 @@
-import { Injectable, CanActivate, ExecutionContext, Logger } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, Logger, UnauthorizedException } from '@nestjs/common';
 import { createClerkClient } from '@clerk/clerk-sdk-node';
 
 @Injectable()
@@ -20,11 +20,16 @@ export class ClerkGuard implements CanActivate {
       headers: request.headers,
     });
 
+    if (!authHeader) {
+      this.logger.warn('No authorization token provided');
+      throw new UnauthorizedException('No authorization token provided');
+    }
+
     const token = authHeader?.split(' ')[1];
 
     if (!token) {
-      this.logger.warn('No authorization token provided');
-      return false;
+      this.logger.warn('Invalid authorization header format');
+      throw new UnauthorizedException('Invalid authorization header format');
     }
 
     try {
@@ -39,7 +44,6 @@ export class ClerkGuard implements CanActivate {
       // Add the user data to the request
       request.user = {
         id: claims.sub,
-        ...claims
       };
       
       return true;
@@ -49,7 +53,7 @@ export class ClerkGuard implements CanActivate {
         name: error.name,
         stack: error.stack,
       });
-      return false;
+      throw new UnauthorizedException('Invalid token');
     }
   }
 } 

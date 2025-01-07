@@ -9,15 +9,15 @@ export class UserController {
   constructor(private userService: UserService) {}
 
   @Get('me')
-  getMe(@User('id') userId: string) {
-    return this.userService.getUser(userId);
+  getMe(@User() user: { id: string }) {
+    return this.userService.getUser(user.id);
   }
 
   @Put('me')
   updateMe(
-    @User('id') userId: string,
+    @User() user: { id: string },
     @Body() data: { name?: string; imageUrl?: string }
   ) {
-    return this.userService.updateUser(userId, data);
+    return this.userService.updateUser(user.id, data);
   }
 } 

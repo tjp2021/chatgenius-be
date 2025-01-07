@@ -1,9 +1,6 @@
 import { Module } from '@nestjs/common';
 import { WebhookController } from './webhook.controller';
 import { UserModule } from '../user/user.module';
-import { JwtService } from './jwt.service';
-import { AuthController } from './auth.controller';
-import { JwtGuard } from './jwt.guard';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { RateLimitGuard } from './rate-limit.guard';
 import { TokenBlacklistService } from './token-blacklist.service';
@@ -22,8 +19,8 @@ import { HealthController } from './health.controller';
     TerminusModule,
     HttpModule,
   ],
-  controllers: [WebhookController, AuthController, HealthController],
-  providers: [JwtService, JwtGuard, RateLimitGuard, TokenBlacklistService],
-  exports: [JwtService, JwtGuard, RateLimitGuard, TokenBlacklistService],
+  controllers: [WebhookController, HealthController],
+  providers: [RateLimitGuard, TokenBlacklistService],
+  exports: [RateLimitGuard, TokenBlacklistService],
 })
 export class AuthModule {}
