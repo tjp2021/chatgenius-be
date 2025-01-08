@@ -12,7 +12,7 @@ import {
   SortOrder,
 } from './dto/channel-browse.dto';
 
-@Controller('channels')
+@Controller('channels/browse')
 @UseGuards(ClerkGuard)
 export class BrowseController {
   constructor(private browseService: BrowseService) {}
