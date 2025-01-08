@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { json } from 'express';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -15,16 +16,28 @@ async function bootstrap() {
     },
   }));
   
-  // Configure CORS
+  // Configure CORS for both HTTP and WebSocket
+  const corsOrigins = process.env.FRONTEND_URL?.split(',') || [];
   app.enableCors({
-    origin: process.env.FRONTEND_URL?.split(',')[0], // Use only the HTTP origin
+    origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type'],
   });
+
+  // Configure WebSocket
+  const ioAdapter = new IoAdapter(app);
+  ioAdapter.createIOServer(3002, {
+    cors: {
+      origin: corsOrigins,
+      credentials: true,
+    },
+    transports: ['websocket', 'polling'],
+  });
+  app.useWebSocketAdapter(ioAdapter);
   
   app.useGlobalPipes(new ValidationPipe());
   
-  await app.listen(process.env.PORT || 3001);
+  await app.listen(3002);
 }
 bootstrap();

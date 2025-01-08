@@ -12,6 +12,7 @@ export interface ChannelBrowseResponse {
   createdAt: string;
   isMember?: boolean;
   joinedAt?: string;
+  isOwner?: boolean;
 }
 
 export interface PublicChannelsResponse {

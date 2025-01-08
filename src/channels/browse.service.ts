@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChannelType, MemberRole } from '@prisma/client';
+import { ChannelsService } from './channels.service';
 import {
   PublicChannelsResponse,
   JoinedChannelsResponse,
@@ -14,7 +15,10 @@ import {
 
 @Injectable()
 export class BrowseService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private channelsService: ChannelsService,
+  ) {}
 
   async getPublicChannels(
     userId: string,
@@ -81,7 +85,10 @@ export class BrowseService {
         },
         members: {
           where: { userId },
-          select: { joinedAt: true },
+          select: { 
+            joinedAt: true,
+            role: true  // Add role to select
+          },
         },
       },
       orderBy: this.getOrderByClause(sortBy, sortOrder),
@@ -99,6 +106,7 @@ export class BrowseService {
         },
         createdAt: channel.createdAt.toISOString(),
         joinedAt: channel.members[0].joinedAt.toISOString(),
+        isOwner: channel.members[0].role === MemberRole.OWNER,  // Add isOwner field
       })),
     };
   }
@@ -151,28 +159,13 @@ export class BrowseService {
           userId,
         },
       },
-      include: {
-        channel: true,
-      },
-    });
+   });
 
     if (!membership) {
       throw new NotFoundException('Not a member of this channel');
     }
 
-    if (membership.role === MemberRole.OWNER) {
-      throw new ForbiddenException('Channel owner cannot leave the channel');
-    }
-
-    await this.prisma.channelMember.delete({
-      where: {
-        channelId_userId: {
-          channelId,
-          userId,
-        },
-      },
-    });
-
+    await this.channelsService.leave(userId, channelId, false);
     return { success: true };
   }
 

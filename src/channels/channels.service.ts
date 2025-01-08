@@ -470,6 +470,10 @@ export class ChannelsService {
           where: { id: channelId },
         });
         this.logger.debug(`Channel ${channelId} deleted by owner ${userId}`);
+        // Invalidate cache for all members
+        await Promise.all(channel.members.map(m => 
+          this.cacheService.invalidateChannelMembership(m.userId, channelId)
+        ));
       } else if (isOwner) {
         // Transfer ownership to the next member or delete if no other members
         const nextOwner = channel.members.find(m => m.userId !== userId);
@@ -491,12 +495,19 @@ export class ChannelsService {
               data: { role: MemberRole.OWNER }
             })
           ]);
+          // Invalidate cache for both users
+          await Promise.all([
+            this.cacheService.invalidateChannelMembership(userId, channelId),
+            this.cacheService.invalidateChannelMembership(nextOwner.userId, channelId)
+          ]);
           this.logger.debug(`Ownership transferred from ${userId} to ${nextOwner.userId} for channel ${channelId}`);
         } else {
           // No other members, delete the channel
           await this.prisma.channel.delete({
             where: { id: channelId },
           });
+          // Invalidate cache for the owner
+          await this.cacheService.invalidateChannelMembership(userId, channelId);
           this.logger.debug(`Channel ${channelId} deleted as owner ${userId} was the last member`);
         }
       } else {
@@ -510,13 +521,22 @@ export class ChannelsService {
               },
             },
           }),
-          this.prisma.$executeRaw`
-            UPDATE channels 
-            SET "memberCount" = "memberCount" - 1 
-            WHERE id = ${channelId}
-          `
+          // Update channel member count using Prisma update
+          this.prisma.channel.update({
+            where: { id: channelId },
+            data: {
+              memberCount: {
+                decrement: 1
+              }
+            }
+          })
         ]);
+        // Invalidate cache for the leaving member
+        await this.cacheService.invalidateChannelMembership(userId, channelId);
       }
+      
+      // Invalidate channel list cache for the user
+      await this.cacheService.invalidateChannelList(userId);
       
       this.logger.debug(`Successfully processed leave request for user ${userId} from channel ${channelId}`);
     } catch (error) {

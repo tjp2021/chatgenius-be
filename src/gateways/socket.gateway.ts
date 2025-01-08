@@ -9,6 +9,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
 import { DraftService } from '../channels/draft.service';
+import { ChannelsService } from '../channels/channels.service';
 import { DraftSyncDto } from '../channels/dto/draft-sync.dto';
 import { SaveDraftDto } from '../channels/dto/save-draft.dto';
 import { Logger } from '@nestjs/common';
@@ -30,6 +31,7 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private prisma: PrismaService,
     private draftService: DraftService,
+    private channelsService: ChannelsService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -85,12 +87,61 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('channel:leave')
-  async handleChannelLeave(client: Socket, channelId: string) {
-    const userId = client.handshake.auth.userId;
-    if (!userId) return;
+  async handleChannelLeave(client: Socket, payload: { channelId: string; shouldDelete?: boolean }) {
+    try {
+      const userId = client.handshake.auth.userId;
+      if (!userId) throw new WsException('Unauthorized');
 
-    client.leave(`channel:${channelId}`);
-    await this.emitMemberCountUpdate(channelId);
+      const { channelId, shouldDelete } = payload;
+
+      // Get channel membership to check if user is owner
+      const membership = await this.prisma.channelMember.findUnique({
+        where: {
+          channelId_userId: {
+            channelId: channelId,
+            userId: userId
+          },
+        },
+        include: {
+          channel: {
+            select: {
+              name: true
+            }
+          }
+        }
+      });
+
+      if (!membership) {
+        throw new WsException('Not a member of this channel');
+      }
+
+      // Process leave/delete through channels service
+      await this.channelsService.leave(userId, channelId, shouldDelete);
+
+      // Remove socket from channel room
+      client.leave(`channel:${channelId}`);
+
+      if (shouldDelete) {
+        // Notify all channel members about deletion
+        this.server.to(`channel:${channelId}`).emit('channel:deleted', { 
+          channelId,
+          channelName: membership.channel.name
+        });
+      } else {
+        // Notify remaining members about user leaving
+        this.server.to(`channel:${channelId}`).emit('channel:member_left', {
+          channelId,
+          userId,
+          userName: client.handshake.auth.userName || 'Unknown User'
+        });
+      }
+
+      // Update member count
+      await this.emitMemberCountUpdate(channelId);
+
+    } catch (error) {
+      this.handleError(client, error);
+    }
   }
 
   @SubscribeMessage('draft:sync')
@@ -199,6 +250,38 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await this.emitMetadataUpdate(channelId, {
       detailed: updates,
     });
+  }
+
+  @SubscribeMessage('channel:leave:check')
+  async handleChannelLeaveCheck(client: Socket, payload: { channelId: string }): Promise<any> {
+    try {
+      const userId = client.handshake.auth.userId;
+      if (!userId) throw new WsException('Unauthorized');
+
+      const { channelId } = payload;
+
+      // Check channel membership
+      const membership = await this.prisma.channelMember.findUnique({
+        where: {
+          channelId_userId: {
+            channelId: channelId,
+            userId: userId
+          },
+        }
+      });
+
+      if (!membership) {
+        throw new WsException('Not a member of this channel');
+      }
+
+      // If we get here, the user is a member
+      return { success: true };
+
+    } catch (error) {
+      this.handleError(client, error);
+      // Re-throw the error so the client gets it
+      throw error;
+    }
   }
 
   private handleError(client: Socket, error: any) {
