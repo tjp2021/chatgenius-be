@@ -294,16 +294,11 @@ export class ChannelsService {
 
       const channels = await this.prisma.channel.findMany({
         where: {
-          OR: [
-            { type: 'PUBLIC' },
-            {
-              members: {
-                some: {
-                  userId
-                }
-              }
+          members: {
+            some: {
+              userId
             }
-          ],
+          },
           ...(query?.type ? { type: query.type } : {}),
           ...(query?.search ? {
             OR: [
@@ -437,46 +432,97 @@ export class ChannelsService {
     return channel;
   }
 
-  async leave(userId: string, channelId: string) {
+  async leave(userId: string, channelId: string, shouldDelete: boolean = false) {
+    this.logger.debug(`Attempting to leave channel. UserId: ${userId}, ChannelId: ${channelId}, ShouldDelete: ${shouldDelete}`);
+    
     const channel = await this.prisma.channel.findUnique({
       where: { id: channelId },
       include: {
-        members: true,
+        members: {
+          include: {
+            user: true
+          }
+        },
       },
     });
 
     if (!channel) {
+      this.logger.error(`Channel not found: ${channelId}`);
       throw new NotFoundException('Channel not found');
     }
 
     const member = channel.members.find(m => m.userId === userId);
     if (!member) {
-      throw new ForbiddenException('Not a member of this channel');
+      // If not a member, we're already "left" - return success
+      this.logger.debug(`User ${userId} is not a member of channel ${channelId} - already left`);
+      return { nextChannel: null };
     }
 
-    if (member.role === MemberRole.OWNER) {
-      throw new ForbiddenException('Channel owner cannot leave the channel');
-    }
+    const isOwner = member.role === MemberRole.OWNER;
 
     // Get next channel before removing membership
     const nextChannel = await this.handleChannelTransition(userId, channelId);
 
-    // Remove membership and update member count in a transaction
-    await this.prisma.$transaction([
-      this.prisma.channelMember.delete({
-        where: {
-          channelId_userId: {
-            channelId,
-            userId,
-          },
-        },
-      }),
-      this.prisma.$executeRaw`
-        UPDATE channels 
-        SET "memberCount" = "memberCount" - 1 
-        WHERE id = ${channelId}
-      `
-    ]);
+    try {
+      if (isOwner && shouldDelete) {
+        // Delete the entire channel and all its members
+        await this.prisma.channel.delete({
+          where: { id: channelId },
+        });
+        this.logger.debug(`Channel ${channelId} deleted by owner ${userId}`);
+      } else if (isOwner) {
+        // Transfer ownership to the next member or delete if no other members
+        const nextOwner = channel.members.find(m => m.userId !== userId);
+        
+        if (nextOwner) {
+          await this.prisma.$transaction([
+            // Update current owner to regular member
+            this.prisma.channelMember.update({
+              where: {
+                channelId_userId: { channelId, userId }
+              },
+              data: { role: MemberRole.MEMBER }
+            }),
+            // Promote next member to owner
+            this.prisma.channelMember.update({
+              where: {
+                channelId_userId: { channelId, userId: nextOwner.userId }
+              },
+              data: { role: MemberRole.OWNER }
+            })
+          ]);
+          this.logger.debug(`Ownership transferred from ${userId} to ${nextOwner.userId} for channel ${channelId}`);
+        } else {
+          // No other members, delete the channel
+          await this.prisma.channel.delete({
+            where: { id: channelId },
+          });
+          this.logger.debug(`Channel ${channelId} deleted as owner ${userId} was the last member`);
+        }
+      } else {
+        // Regular member leaving
+        await this.prisma.$transaction([
+          this.prisma.channelMember.delete({
+            where: {
+              channelId_userId: {
+                channelId,
+                userId,
+              },
+            },
+          }),
+          this.prisma.$executeRaw`
+            UPDATE channels 
+            SET "memberCount" = "memberCount" - 1 
+            WHERE id = ${channelId}
+          `
+        ]);
+      }
+      
+      this.logger.debug(`Successfully processed leave request for user ${userId} from channel ${channelId}`);
+    } catch (error) {
+      this.logger.error(`Failed to process leave request for user ${userId} from channel ${channelId}:`, error);
+      throw error;
+    }
 
     return { nextChannel };
   }

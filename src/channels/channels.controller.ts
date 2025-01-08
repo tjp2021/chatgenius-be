@@ -39,8 +39,12 @@ export class ChannelsController {
   }
 
   @Delete(':id/leave')
-  leave(@User() user: { id: string }, @Param('id') id: string) {
-    return this.channelsService.leave(user.id, id);
+  leave(
+    @User() user: { id: string }, 
+    @Param('id') id: string,
+    @Query('shouldDelete') shouldDelete?: boolean
+  ) {
+    return this.channelsService.leave(user.id, id, shouldDelete);
   }
 
   @Post(':id/read')

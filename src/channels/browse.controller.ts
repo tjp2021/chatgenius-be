@@ -45,22 +45,6 @@ export class BrowseController {
     });
   }
 
-  @Post(':channelId/join')
-  async joinChannel(
-    @UserId() userId: string,
-    @Param('channelId') channelId: string,
-  ): Promise<ChannelJoinResponse> {
-    return this.browseService.joinChannel(userId, channelId);
-  }
-
-  @Post(':channelId/leave')
-  async leaveChannel(
-    @UserId() userId: string,
-    @Param('channelId') channelId: string,
-  ): Promise<ChannelLeaveResponse> {
-    return this.browseService.leaveChannel(userId, channelId);
-  }
-
   @Get(':channelId/members')
   async getChannelMembers(
     @UserId() userId: string,
