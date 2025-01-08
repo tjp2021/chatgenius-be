@@ -1,0 +1,319 @@
+// ========== Enums ==========
+enum ChannelType {
+  PUBLIC
+  PRIVATE
+  DM
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MessageType {
+  TEXT
+  AI
+  FILE
+}
+
+enum Status {
+  ONLINE
+  OFFLINE
+  AWAY
+}
+
+enum AIType {
+  STYLE
+  VOICE
+  VIDEO
+}
+
+enum RateLimitType {
+  MESSAGE
+  AI_CALL
+  FILE_UPLOAD
+}
+
+enum UsageLogType {
+  MESSAGE
+  FILE
+  AI_CALL
+  MEETING
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// ========== Models ==========
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  name          String
+  imageUrl      String?
+  role          UserRole       @default(USER)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  deletedAt     DateTime?
+
+  channels      Channel[]      @relation("ChannelCreator")
+  channelMembers ChannelMember[]
+  messages      Message[]
+  reactions     Reaction[]
+  files         File[]
+  presence      Presence?
+  aiContext     AIContext?
+  aiPreferences AIPreference?
+  usageLogs     UsageLog[]
+  rateLimits    RateLimit[]
+  pinnedMessages Message[]     @relation("MessagePinner")
+  meetings      Meeting[]
+  meetingParticipants MeetingParticipant[]
+
+  @@index([email])
+}
+
+model Channel {
+  id          String         @id @default(uuid())
+  name        String
+  type        ChannelType
+  description String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deletedAt   DateTime?
+  
+  creator     User           @relation("ChannelCreator", fields: [creatorId], references: [id])
+  creatorId   String
+  
+  members     ChannelMember[]
+  messages    Message[]
+  meetings    Meeting[]
+  knowledgeBase KnowledgeItem[]
+
+  @@index([name])
+  @@index([deletedAt])
+}
+
+model Message {
+  id          String        @id @default(uuid())
+  content     String        @db.Text
+  type        MessageType
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  
+  isPinned    Boolean       @default(false)
+  pinnedBy    User?         @relation("MessagePinner", fields: [pinnedById], references: [id])
+  pinnedById  String?
+  pinnedAt    DateTime?
+  
+  parentId    String?
+  parent      Message?      @relation("ThreadMessages", fields: [parentId], references: [id])
+  replies     Message[]     @relation("ThreadMessages")
+  
+  channel     Channel       @relation(fields: [channelId], references: [id])
+  channelId   String
+  author      User          @relation(fields: [authorId], references: [id])
+  authorId    String
+  
+  reactions   Reaction[]
+  files       File[]
+  usageLogs   UsageLog[]
+  translations MessageTranslation[]
+  knowledgeItems KnowledgeItem[]
+
+  @@index([channelId])
+  @@index([authorId])
+  @@index([parentId])
+  @@index([createdAt])
+  @@index([deletedAt])
+}
+
+model MessageTranslation {
+  id          String   @id @default(uuid())
+  content     String   @db.Text
+  language    String
+  message     Message  @relation(fields: [messageId], references: [id])
+  messageId   String
+
+  @@index([messageId])
+  @@index([language])
+}
+
+model File {
+  id          String        @id @default(uuid())
+  name        String
+  url         String
+  size        Int
+  type        String
+  uploadedAt  DateTime      @default(now())
+  deletedAt   DateTime?
+  
+  message     Message       @relation(fields: [messageId], references: [id])
+  messageId   String
+  uploader    User          @relation(fields: [uploaderId], references: [id])
+  uploaderId  String
+  
+  metadata    FileMetadata?
+  usageLogs   UsageLog[]
+
+  @@index([messageId])
+  @@index([uploaderId])
+  @@index([deletedAt])
+}
+
+model FileMetadata {
+  id          String    @id @default(uuid())
+  summary     String?   @db.Text
+  embedding   Float[]?
+  
+  file        File      @relation(fields: [fileId], references: [id])
+  fileId      String    @unique
+
+  @@index([fileId])
+}
+
+model Presence {
+  id          String    @id @default(uuid())
+  status      Status
+  lastSeen    DateTime  @updatedAt
+  
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String    @unique
+}
+
+model AIContext {
+  id          String    @id @default(uuid())
+  contextType AIType
+  settings    Json
+  lastUpdated DateTime  @updatedAt
+  
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String    @unique
+}
+
+model AIPreference {
+  id              String    @id @default(uuid())
+  tone            String[]
+  vocabulary      String[]
+  responseStyle   Json
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  user            User      @relation(fields: [userId], references: [id])
+  userId          String    @unique
+}
+
+model KnowledgeItem {
+  id          String    @id @default(uuid())
+  content     String    @db.Text
+  embedding   Float[]
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  sourceType  String    // CHAT/DOCUMENT/EXTERNAL
+  sourceId    String?   // Reference to original content
+  
+  channel     Channel   @relation(fields: [channelId], references: [id])
+  channelId   String
+  message     Message?  @relation(fields: [messageId], references: [id])
+  messageId   String?
+
+  @@index([channelId])
+  @@index([messageId])
+}
+
+model Meeting {
+  id          String        @id @default(uuid())
+  title       String
+  status      MeetingStatus @default(SCHEDULED)
+  startTime   DateTime
+  endTime     DateTime?
+  summary     String?       @db.Text
+  transcript  String?       @db.Text
+  
+  channel     Channel       @relation(fields: [channelId], references: [id])
+  channelId   String
+  
+  creator     User          @relation(fields: [creatorId], references: [id])
+  creatorId   String
+  
+  participants MeetingParticipant[]
+  recordings   MeetingRecording[]
+
+  @@index([channelId])
+  @@index([creatorId])
+  @@index([startTime])
+}
+
+model MeetingParticipant {
+  id          String    @id @default(uuid())
+  joinedAt    DateTime?
+  leftAt      DateTime?
+  
+  meeting     Meeting   @relation(fields: [meetingId], references: [id])
+  meetingId   String
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+
+  @@index([meetingId])
+  @@index([userId])
+}
+
+model MeetingRecording {
+  id          String    @id @default(uuid())
+  url         String
+  type        String    // AUDIO/VIDEO
+  duration    Int
+  createdAt   DateTime  @default(now())
+  
+  meeting     Meeting   @relation(fields: [meetingId], references: [id])
+  meetingId   String
+
+  @@index([meetingId])
+}
+
+model RateLimit {
+  id            String        @id @default(uuid())
+  type          RateLimitType
+  count         Int
+  windowStart   DateTime
+  windowEnd     DateTime
+  
+  user          User          @relation(fields: [userId], references: [id])
+  userId        String
+
+  @@index([userId, type])
+  @@index([windowStart])
+  @@index([windowEnd])
+}
+
+model UsageLog {
+  id            String       @id @default(uuid())
+  type          UsageLogType
+  metadata      Json?
+  timestamp     DateTime     @default(now())
+  
+  user          User         @relation(fields: [userId], references: [id])
+  userId        String
+  
+  messageId     String?
+  message       Message?     @relation(fields: [messageId], references: [id])
+  fileId        String?  
+  file          File?        @relation(fields: [fileId], references: [id])
+
+  @@index([userId, type])
+  @@index([timestamp])
+  @@index([messageId])
+  @@index([fileId])
+}

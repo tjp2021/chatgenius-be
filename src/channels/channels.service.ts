@@ -13,6 +13,7 @@ import {
   ChannelCapacityException,
   TransitionError
 } from './errors';
+import { ChannelMetadataDto } from './dto/channel-metadata.dto';
 
 const MAX_CHANNEL_MEMBERS = 1000;
 const MAX_TRANSITION_ATTEMPTS = 3;
@@ -161,8 +162,15 @@ export class ChannelsService {
             id: { not: currentChannelId }
           }
         },
-        include: {
-          channel: true
+        select: {
+          channelId: true,
+          lastReadAt: true,
+          unreadCount: true,
+          channel: {
+            select: {
+              type: true
+            }
+          }
         },
         orderBy: {
           createdAt: 'asc'
@@ -172,7 +180,9 @@ export class ChannelsService {
       if (nextChannel?.channel) {
         return {
           channelId: nextChannel.channelId,
-          type: nextChannel.channel.type
+          type: nextChannel.channel.type,
+          lastViewedAt: nextChannel.lastReadAt || new Date(),
+          unreadState: nextChannel.unreadCount > 0
         };
       }
     }
@@ -480,18 +490,27 @@ export class ChannelsService {
           type: ChannelType.PUBLIC
         }
       },
+      select: {
+        channelId: true,
+        lastReadAt: true,
+        unreadCount: true,
+        channel: {
+          select: {
+            type: true
+          }
+        }
+      },
       orderBy: {
         createdAt: 'asc'
-      },
-      include: {
-        channel: true
       }
     });
 
     if (publicChannel?.channel) {
       return {
         channelId: publicChannel.channelId,
-        type: publicChannel.channel.type
+        type: publicChannel.channel.type,
+        lastViewedAt: publicChannel.lastReadAt || new Date(),
+        unreadState: publicChannel.unreadCount > 0
       };
     }
 
@@ -503,18 +522,27 @@ export class ChannelsService {
           type: ChannelType.PRIVATE
         }
       },
+      select: {
+        channelId: true,
+        lastReadAt: true,
+        unreadCount: true,
+        channel: {
+          select: {
+            type: true
+          }
+        }
+      },
       orderBy: {
         createdAt: 'asc'
-      },
-      include: {
-        channel: true
       }
     });
 
     if (privateChannel?.channel) {
       return {
         channelId: privateChannel.channelId,
-        type: privateChannel.channel.type
+        type: privateChannel.channel.type,
+        lastViewedAt: privateChannel.lastReadAt || new Date(),
+        unreadState: privateChannel.unreadCount > 0
       };
     }
 
@@ -526,18 +554,27 @@ export class ChannelsService {
           type: ChannelType.DM
         }
       },
+      select: {
+        channelId: true,
+        lastReadAt: true,
+        unreadCount: true,
+        channel: {
+          select: {
+            type: true
+          }
+        }
+      },
       orderBy: {
         createdAt: 'asc'
-      },
-      include: {
-        channel: true
       }
     });
 
     if (dmChannel?.channel) {
       return {
         channelId: dmChannel.channelId,
-        type: dmChannel.channel.type
+        type: dmChannel.channel.type,
+        lastViewedAt: dmChannel.lastReadAt || new Date(),
+        unreadState: dmChannel.unreadCount > 0
       };
     }
 
@@ -696,5 +733,37 @@ export class ChannelsService {
       }
       throw error;
     }
+  }
+
+  async getChannelMetadata(userId: string, channelId: string): Promise<ChannelMetadataDto> {
+    // Get channel and membership data
+    const channelWithMember = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+      include: {
+        members: {
+          where: { userId },
+          include: { user: true }
+        },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        }
+      },
+    });
+
+    if (!channelWithMember || !channelWithMember.members.length) {
+      throw new NotFoundException('Channel not found or user is not a member');
+    }
+
+    const member = channelWithMember.members[0];
+    const lastMessage = channelWithMember.messages[0];
+
+    return {
+      name: channelWithMember.name,
+      description: channelWithMember.description,
+      unreadCount: member.unreadCount,
+      memberCount: channelWithMember.memberCount,
+      lastMessagePreview: lastMessage?.content?.slice(0, 100),
+    };
   }
 }

@@ -4,6 +4,8 @@ import { CreateChannelDto } from './dto/create-channel.dto';
 import { ChannelType } from '@prisma/client';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { User } from '../decorators/user.decorator';
+import { UserId } from '../decorators/user-id.decorator';
+import { ChannelMetadataDto } from './dto/channel-metadata.dto';
 
 @Controller('channels')
 @UseGuards(ClerkGuard)
@@ -56,5 +58,13 @@ export class ChannelsController {
   @Get(':id/activity')
   async getActivity(@Param('id') id: string) {
     return this.channelsService.getChannelActivity(id);
+  }
+
+  @Get(':channelId/metadata')
+  async getChannelMetadata(
+    @UserId() userId: string,
+    @Param('channelId') channelId: string,
+  ): Promise<ChannelMetadataDto> {
+    return this.channelsService.getChannelMetadata(userId, channelId);
   }
 }
