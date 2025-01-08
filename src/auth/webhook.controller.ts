@@ -11,7 +11,12 @@ export class WebhookController {
   
   constructor(private userService: UserService) {
     const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
-    this.logger.debug('Webhook Secret:', webhookSecret?.substring(0, 4) + '...');
+    this.logger.debug('Initializing webhook controller');
+    this.logger.debug('Environment variables:', {
+      CLERK_WEBHOOK_SECRET: webhookSecret ? 'Set' : 'Not set',
+      NODE_ENV: process.env.NODE_ENV,
+      FRONTEND_URL: process.env.FRONTEND_URL,
+    });
     
     if (!webhookSecret) {
       throw new Error('CLERK_WEBHOOK_SECRET is not set');
@@ -28,10 +33,13 @@ export class WebhookController {
     @Req() request: RawBodyRequest<Request>,
   ) {
     this.logger.log(`Received webhook - ID: ${svixId}`);
-    this.logger.debug('Headers received:', {
-      'svix-id': svixId,
-      'svix-timestamp': svixTimestamp,
-      'svix-signature': svixSignature,
+    this.logger.debug('Request details:', {
+      method: request.method,
+      url: request.url,
+      headers: request.headers,
+      rawBody: request.rawBody ? 'Present' : 'Missing',
+      rawBodyLength: request.rawBody?.length,
+      contentType: request.headers['content-type'],
     });
     
     try {
@@ -43,16 +51,6 @@ export class WebhookController {
       const rawBody = request.rawBody.toString('utf8');
       this.logger.debug('Raw body:', rawBody);
       
-      // Log request properties
-      this.logger.debug('Request properties:', {
-        method: request.method,
-        contentType: request.headers['content-type'],
-        contentLength: request.headers['content-length'],
-        bodyType: typeof request.body,
-        rawBodyType: typeof request.rawBody,
-        rawBodyLength: request.rawBody.length,
-      });
-
       // Prepare headers as required by svix
       const svixHeaders = {
         'svix-id': svixId,
@@ -60,11 +58,7 @@ export class WebhookController {
         'svix-signature': svixSignature,
       } satisfies WebhookRequiredHeaders;
 
-      this.logger.debug('Attempting to verify webhook with svix...', {
-        headerKeys: Object.keys(svixHeaders),
-        timestampType: typeof svixTimestamp,
-        timestampValue: svixTimestamp,
-      });
+      this.logger.debug('Verifying webhook with headers:', svixHeaders);
       
       let payload: WebhookEvent;
       try {
@@ -76,6 +70,7 @@ export class WebhookController {
           error: verifyError.message,
           code: verifyError.code,
           name: verifyError.name,
+          stack: verifyError.stack,
         });
         throw verifyError;
       }

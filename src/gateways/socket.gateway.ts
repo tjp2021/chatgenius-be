@@ -10,6 +10,7 @@ import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
 import { DraftService } from '../channels/draft.service';
 import { ChannelsService } from '../channels/channels.service';
+import { BrowseService } from '../channels/browse.service';
 import { DraftSyncDto } from '../channels/dto/draft-sync.dto';
 import { SaveDraftDto } from '../channels/dto/save-draft.dto';
 import { Logger } from '@nestjs/common';
@@ -32,6 +33,7 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private prisma: PrismaService,
     private draftService: DraftService,
     private channelsService: ChannelsService,
+    private browseService: BrowseService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -65,25 +67,167 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.emit('presence:update', { userId, isOnline: false });
   }
 
-  // Channel events
-  async emitChannelUpdate(channelId: string) {
-    this.server.emit('channel:update', channelId);
+  // Channel update events
+  async emitChannelUpdate(channelId: string, userId: string) {
+    try {
+      // Get updated channel data
+      const channelData = await this.browseService.getJoinedChannels(userId, {});
+      
+      // Emit updated channel list to the specific user
+      this.server.to(`user:${userId}`).emit('channels:list', {
+        channels: channelData.channels.map(channel => ({
+          id: channel.id,
+          name: channel.name,
+          type: channel.type,
+          _count: channel._count,
+          isOwner: channel.isOwner,
+          joinedAt: channel.joinedAt
+        }))
+      });
+
+      // Get the updated channel for channel:updated event
+      const updatedChannel = channelData.channels.find(c => c.id === channelId);
+      if (updatedChannel) {
+        this.server.to(`user:${userId}`).emit('channel:updated', {
+          channel: updatedChannel,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Emit member count update to all users in the channel
+      const activity = await this.channelsService.getChannelActivity(channelId);
+      this.server.to(`channel:${channelId}`).emit('channel:member_count', {
+        channelId,
+        count: activity.memberCount,
+        timestamp: new Date().toISOString()
+      });
+
+      // Get and emit updated public channels list
+      const publicChannels = await this.browseService.getPublicChannels(userId, { 
+        search: '', 
+        sortBy: 'memberCount', 
+        sortOrder: 'desc' 
+      });
+      this.server.emit('public:channels', {
+        channels: publicChannels.channels,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      this.logger.error(`Failed to emit channel update: ${error.message}`, error.stack);
+    }
   }
 
-  async emitMemberCountUpdate(channelId: string) {
-    const count = await this.prisma.channelMember.count({
-      where: { channelId }
+  async emitChannelDeleted(channelId: string, channelName: string) {
+    this.server.emit('channel:deleted', {
+      channelId,
+      channelName,
+      timestamp: new Date().toISOString()
     });
-    this.server.emit('channel:member_count', { channelId, count });
+  }
+
+  async emitMemberJoined(channelId: string, userId: string, userName: string) {
+    // Get full channel and membership data
+    const membership = await this.prisma.channelMember.findUnique({
+      where: {
+        channelId_userId: {
+          channelId,
+          userId
+        }
+      },
+      include: {
+        channel: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            type: true,
+            memberCount: true
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+            isOnline: true
+          }
+        }
+      }
+    });
+
+    if (!membership) {
+      this.logger.error(`Failed to emit member joined: membership not found for ${userId} in ${channelId}`);
+      return;
+    }
+
+    this.server.to(`channel:${channelId}`).emit('channel:member_joined', {
+      channelId: membership.channelId,
+      userId: membership.userId,
+      role: membership.role,
+      channel: membership.channel,
+      user: membership.user
+    });
+  }
+
+  async emitMemberLeft(channelId: string, userId: string, userName: string) {
+    this.server.to(`channel:${channelId}`).emit('channel:member_left', {
+      channelId,
+      userId,
+      userName,
+      timestamp: new Date().toISOString()
+    });
   }
 
   @SubscribeMessage('channel:join')
-  async handleChannelJoin(client: Socket, channelId: string) {
-    const userId = client.handshake.auth.userId;
-    if (!userId) return;
+  async handleChannelJoin(client: Socket, payload: { channelId: string }) {
+    try {
+      const userId = client.handshake.auth.userId;
+      if (!userId) throw new WsException('Unauthorized');
 
-    client.join(`channel:${channelId}`);
-    await this.emitMemberCountUpdate(channelId);
+      const { channelId } = payload;
+
+      // Join the channel through the channels service
+      await this.channelsService.join(userId, channelId);
+
+      // Join the socket room
+      client.join(`channel:${channelId}`);
+
+      // Emit member joined event
+      await this.emitMemberJoined(
+        channelId,
+        userId,
+        client.handshake.auth.userName || 'Unknown User'
+      );
+
+      // Get and emit updated public channels list to all clients
+      const publicChannels = await this.browseService.getPublicChannels(userId, { 
+        search: '', 
+        sortBy: 'memberCount', 
+        sortOrder: 'desc' 
+      });
+      this.server.emit('public:channels', {
+        channels: publicChannels.channels,
+        timestamp: new Date().toISOString()
+      });
+
+      // Get and emit updated joined channels list to the user
+      const joinedChannels = await this.browseService.getJoinedChannels(userId, {});
+      this.server.to(`user:${userId}`).emit('channels:list', {
+        channels: joinedChannels.channels,
+        timestamp: new Date().toISOString()
+      });
+
+      // Emit member count update to all users in the channel
+      const activity = await this.channelsService.getChannelActivity(channelId);
+      this.server.to(`channel:${channelId}`).emit('channel:member_count', {
+        channelId,
+        count: activity.memberCount,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      this.handleError(client, error);
+    }
   }
 
   @SubscribeMessage('channel:leave')
@@ -98,9 +242,9 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const membership = await this.prisma.channelMember.findUnique({
         where: {
           channelId_userId: {
-            channelId: channelId,
-            userId: userId
-          },
+            channelId,
+            userId
+          }
         },
         include: {
           channel: {
@@ -122,22 +266,14 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.leave(`channel:${channelId}`);
 
       if (shouldDelete) {
-        // Notify all channel members about deletion
-        this.server.to(`channel:${channelId}`).emit('channel:deleted', { 
-          channelId,
-          channelName: membership.channel.name
-        });
+        await this.emitChannelDeleted(channelId, membership.channel.name);
       } else {
-        // Notify remaining members about user leaving
-        this.server.to(`channel:${channelId}`).emit('channel:member_left', {
+        await this.emitMemberLeft(
           channelId,
           userId,
-          userName: client.handshake.auth.userName || 'Unknown User'
-        });
+          client.handshake.auth.userName || 'Unknown User'
+        );
       }
-
-      // Update member count
-      await this.emitMemberCountUpdate(channelId);
 
     } catch (error) {
       this.handleError(client, error);
@@ -293,5 +429,31 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     
     client.emit('error', errorResponse);
     this.logger.error(error);
+  }
+
+  @SubscribeMessage('channels:list')
+  async handleChannelsList(client: Socket) {
+    try {
+      const userId = client.handshake.auth.userId;
+      if (!userId) throw new WsException('Unauthorized');
+
+      // Use BrowseService to get only joined channels
+      const joinedChannels = await this.browseService.getJoinedChannels(userId, {});
+      
+      // Return only the necessary data for the sidebar
+      return {
+        channels: joinedChannels.channels.map(channel => ({
+          id: channel.id,
+          name: channel.name,
+          type: channel.type,
+          _count: channel._count,
+          isOwner: channel.isOwner,
+          joinedAt: channel.joinedAt
+        }))
+      };
+    } catch (error) {
+      this.handleError(client, error);
+      throw error; // Re-throw to ensure client gets the error
+    }
   }
 }

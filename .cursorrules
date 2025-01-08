@@ -1,0 +1,109 @@
+{
+  "projectName": "SOA Chat Application",
+  "description": "A service-oriented architecture chat application featuring real-time chat, AI-powered interactions, and systematic documentation of development and debugging processes.",
+  "rules": {
+    "contextWindowLogging": {
+      "enabled": true,
+      "action": "Document the prompt and relevant files in Brainlift.md only when explicitly commanded with 'Add to Brainlift.md'",
+      "command": "Add to Brainlift.md",
+      "format": {
+        "entry": "Context Window: \n\nPrompt: {enter prompt here}\nRelevant Files: {list all files here}\n\n---"
+      }
+    },
+    "debuggingWorkflow": {
+      "identifierSystem": {
+        "format": "CG-{YYYYMMDD}-{sequential_number}",
+        "description": "Each analysis cycle gets a unique identifier that links its problem analysis, solution, and lessons",
+        "example": "CG-20231218-001",
+        "usage": "Include at the start of problem analysis, solution walkthrough, and learning lessons"
+      },
+      "problemAnalysis": {
+        "action": "Create a problem analysis MD file and copy it to Brainlift.md only when explicitly commanded with 'Add to Brainlift.md'",
+        "command": "Add to Brainlift.md",
+        "fields": ["ID", "Error Description", "Root Cause Hypotheses", "Steps to Reproduce", "Logs or Relevant Information"],
+        "exampleEntry": {
+          "header": "Problem Analysis [CG-20231218-001]",
+          "content": "- **ID**: CG-20231218-001\n- **Error Description**: {description of the error}\n- **Root Cause Hypotheses**: {possible causes}\n- **Steps to Reproduce**: {step-by-step}\n- **Logs or Relevant Information**: {logs, screenshots, etc.}"
+        }
+      },
+      "solutionWalkthrough": {
+        "action": "Create a solution walkthrough MD file and copy it to Brainlift.md only when explicitly commanded with 'Add to Brainlift.md'",
+        "command": "Add to Brainlift.md",
+        "fields": ["ID", "Solution Description", "Why It Worked", "Key Lessons"],
+        "exampleEntry": {
+          "header": "Solution Walkthrough [CG-20231218-001]",
+          "content": "- **ID**: CG-20231218-001\n- **Solution Description**: {summary of the fix}\n- **Why It Worked**: {technical explanation}\n- **Key Lessons**: {developer insights}"
+        }
+      },
+      "learningLessons": {
+        "action": "After problem analysis and solution implementation, analyze the entire context window to extract learning lessons. Add to Brainlift.md only when explicitly commanded with 'Add to Brainlift.md'",
+        "command": "Add to Brainlift.md",
+        "timing": "After successful problem resolution",
+        "fields": [
+          "ID",
+          "Pattern Recognition",
+          "Prevention Strategies",
+          "Best Practices Learned",
+          "Future Recommendations"
+        ],
+        "exampleEntry": {
+          "header": "Learning Lessons [CG-20231218-001]",
+          "content": "- **ID**: CG-20231218-001\n- **Pattern Recognition**: {what pattern led to this issue}\n- **Prevention Strategies**: {how to prevent similar issues}\n- **Best Practices Learned**: {what practices would have prevented this}\n- **Future Recommendations**: {specific actions for the future}"
+        }
+      }
+    },
+    "narrowScope": {
+      "principles": ["DRY", "SRP"],
+      "prohibitedActions": ["Overwriting irrelevant code", "Generating unnecessary files", "Hallucinating code snippets"],
+      "requiredActions": ["Ensure all code has a clear purpose", "Explicitly link every action to the context window"]
+    },
+    "brainliftIntegration": {
+      "goal": "Use Brainlift.md as a single source of truth for documenting development progress, debugging, and solutions, but only when explicitly requested.",
+      "guidelines": [
+        "Only add to Brainlift.md when explicitly commanded with 'Add to Brainlift.md'",
+        "Use markdown formatting for clarity and future reference",
+        "After each complete analysis cycle (problem analysis + solution walkthrough + learning lessons), add a divider:",
+        "=================================================================="
+      ],
+      "analysisCycle": {
+        "sequence": [
+          "Problem Analysis [ID]",
+          "Solution Walkthrough [ID]",
+          "Learning Lessons [ID]",
+          "Divider"
+        ],
+        "divider": "=================================================================="
+      },
+      "dividerOrganization": {
+        "description": "Rules for organizing content using dividers in Brainlift.md",
+        "rules": [
+          "New content should be added immediately after the most recent divider (===)",
+          "Each addition should be followed by a new divider line",
+          "Divider format should be exactly 66 equals signs: =================================================================="
+        ],
+        "workflow": {
+          "addContent": [
+            "1. Locate the most recent divider in Brainlift.md",
+            "2. Add new content directly underneath it",
+            "3. Add a new divider line after the content"
+          ],
+          "dividerFormat": {
+            "pattern": "==================================================================",
+            "length": 66,
+            "usage": "Used to separate distinct entries and analysis cycles"
+          }
+        }
+      }
+    }
+  },
+  "examples": {
+    "contextWindowEntryCommand": "Add to Brainlift.md",
+    "problemAnalysisCommand": "Add to Brainlift.md",
+    "solutionWalkthroughCommand": "Add to Brainlift.md",
+    "learningLessonsCommand": "Add to Brainlift.md",
+    "contextWindowEntry": "Context Window: \n\nPrompt: Summarize the project architecture.\nRelevant Files: chatgenius-prd.md, implementation-plan (1).md\n\n---",
+    "problemAnalysisEntry": "Problem Analysis [CG-20231218-001]\n\n- **ID**: CG-20231218-001\n- **Error Description**: API not responding.\n- **Root Cause Hypotheses**: Network latency, incorrect API key.\n- **Steps to Reproduce**: Call endpoint with key X.\n- **Logs or Relevant Information**: {add details}\n\n---",
+    "solutionWalkthroughEntry": "Solution Walkthrough [CG-20231218-001]\n\n- **ID**: CG-20231218-001\n- **Solution Description**: Corrected API key in environment variables.\n- **Why It Worked**: The wrong key was causing authentication failure.\n- **Key Lessons**: Always double-check environment variable settings.\n\n---",
+    "learningLessonsEntry": "Learning Lessons [CG-20231218-001]\n\n- **ID**: CG-20231218-001\n- **Pattern Recognition**: Incomplete API endpoint updates across components\n- **Prevention Strategies**: Implement systematic dependency checking\n- **Best Practices Learned**: Update all related components when changing APIs\n- **Future Recommendations**: Create automated tests for API consistency\n\n==================================================================\n"
+  }
+}

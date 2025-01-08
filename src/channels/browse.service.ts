@@ -1,7 +1,9 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ChannelType, MemberRole } from '@prisma/client';
+import { ChannelType, MemberRole, Prisma } from '@prisma/client';
 import { ChannelsService } from './channels.service';
+import { RedisCacheService } from '../cache/redis.service';
+import { NetworkConnectivityException } from './errors';
 import {
   PublicChannelsResponse,
   JoinedChannelsResponse,
@@ -18,97 +20,143 @@ export class BrowseService {
   constructor(
     private prisma: PrismaService,
     private channelsService: ChannelsService,
+    private cacheService: RedisCacheService,
   ) {}
 
   async getPublicChannels(
     userId: string,
     options: BrowseOptions
   ): Promise<PublicChannelsResponse> {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+    
     const { search, sortBy, sortOrder } = options;
+    console.log('Getting public channels with options:', { userId, search, sortBy, sortOrder });
 
-    const channels = await this.prisma.channel.findMany({
-      where: {
-        type: ChannelType.PUBLIC,
-        name: search ? { contains: search, mode: 'insensitive' } : undefined,
-      },
-      include: {
-        _count: {
-          select: {
-            members: true,
-            messages: true,
-          },
-        },
-        members: {
+    try {
+      // First, get unique channel IDs where user is a member
+      const memberChannelIds = await this.prisma.channelMember
+        .findMany({
           where: { userId },
-          select: { joinedAt: true },
-        },
-      },
-      orderBy: this.getOrderByClause(sortBy, sortOrder),
-    });
+          select: { channelId: true }
+        })
+        .then(members => [...new Set(members.map(m => m.channelId))]);
 
-    return {
-      channels: channels.map(channel => ({
-        id: channel.id,
-        name: channel.name,
-        description: channel.description,
-        type: channel.type,
-        _count: {
-          members: channel._count.members,
-          messages: channel._count.messages,
+      console.log('User member channel IDs:', memberChannelIds);
+
+      // Then get all public channels excluding those IDs
+      const channels = await this.prisma.channel.findMany({
+        where: {
+          type: ChannelType.PUBLIC,
+          id: { notIn: memberChannelIds },
+          ...(search ? {
+            name: { contains: search, mode: 'insensitive' }
+          } : {})
         },
-        createdAt: channel.createdAt.toISOString(),
-        isMember: channel.members.length > 0,
-        joinedAt: channel.members[0]?.joinedAt.toISOString(),
-      })),
-    };
+        include: {
+          _count: {
+            select: {
+              members: true,
+              messages: true,
+            },
+          }
+        },
+        orderBy: { createdAt: sortOrder || 'desc' }
+      });
+
+      console.log('Found public channels:', channels.length, channels.map(c => ({ id: c.id, name: c.name })));
+
+      return {
+        channels: channels.map(channel => ({
+          id: channel.id,
+          name: channel.name,
+          description: channel.description,
+          type: channel.type,
+          _count: {
+            members: channel._count.members,
+            messages: channel._count.messages,
+          },
+          createdAt: channel.createdAt.toISOString(),
+          isMember: false,
+          joinedAt: null,
+        })),
+      };
+    } catch (error) {
+      console.error('Error in getPublicChannels:', error);
+      throw error;
+    }
   }
 
   async getJoinedChannels(
     userId: string,
     options: BrowseOptions
   ): Promise<JoinedChannelsResponse> {
+    if (!userId) {
+      throw new Error('userId is required');
+    }
+
     const { search, sortBy, sortOrder } = options;
+    console.log('Getting joined channels with options:', { userId, search, sortBy, sortOrder });
 
-    const channels = await this.prisma.channel.findMany({
-      where: {
-        members: {
-          some: { userId },
+    try {
+      // Get all channels where user is a member, using distinct to avoid duplicates
+      const memberChannels = await this.prisma.channelMember.findMany({
+        where: { 
+          userId,
+          ...(search ? {
+            channel: {
+              name: { contains: search, mode: 'insensitive' }
+            }
+          } : {})
         },
-        name: search ? { contains: search, mode: 'insensitive' } : undefined,
-      },
-      include: {
-        _count: {
-          select: {
-            members: true,
-            messages: true,
-          },
+        include: {
+          channel: {
+            include: {
+              _count: {
+                select: {
+                  members: true,
+                  messages: true,
+                }
+              }
+            }
+          }
         },
-        members: {
-          where: { userId },
-          select: { 
-            joinedAt: true,
-            role: true  // Add role to select
-          },
+        orderBy: {
+          ...(sortBy === 'createdAt' ? { channel: { createdAt: sortOrder || 'desc' } } :
+            sortBy === 'name' ? { channel: { name: sortOrder || 'desc' } } :
+            sortBy === 'memberCount' ? { channel: { memberCount: sortOrder || 'desc' } } :
+            { joinedAt: sortOrder || 'desc' })
         },
-      },
-      orderBy: this.getOrderByClause(sortBy, sortOrder),
-    });
+        distinct: ['channelId']  // Add distinct constraint
+      });
 
-    return {
-      channels: channels.map(channel => ({
-        id: channel.id,
-        name: channel.name,
-        description: channel.description,
-        type: channel.type,
-        _count: {
-          members: channel._count.members,
-          messages: channel._count.messages,
-        },
-        createdAt: channel.createdAt.toISOString(),
-        joinedAt: channel.members[0].joinedAt.toISOString(),
-        isOwner: channel.members[0].role === MemberRole.OWNER,  // Add isOwner field
-      })),
-    };
+      console.log('Found member channels:', memberChannels.length, memberChannels.map(mc => ({ 
+        id: mc.channel.id, 
+        name: mc.channel.name,
+        role: mc.role,
+        joinedAt: mc.joinedAt
+      })));
+
+      return {
+        channels: memberChannels.map(mc => ({
+          id: mc.channel.id,
+          name: mc.channel.name,
+          description: mc.channel.description,
+          type: mc.channel.type,
+          _count: {
+            members: mc.channel._count.members,
+            messages: mc.channel._count.messages,
+          },
+          createdAt: mc.channel.createdAt.toISOString(),
+          joinedAt: mc.joinedAt.toISOString(),
+          isOwner: mc.role === MemberRole.OWNER,
+        })),
+      };
+    } catch (error) {
+      console.error('Error in getJoinedChannels:', error);
+      throw error;
+    }
   }
 
   async joinChannel(userId: string, channelId: string): Promise<ChannelJoinResponse> {
@@ -133,22 +181,53 @@ export class BrowseService {
       throw new ForbiddenException('Already a member of this channel');
     }
 
-    await this.prisma.channelMember.create({
-      data: {
-        userId,
-        channelId,
-        role: MemberRole.MEMBER,
-      },
-    });
+    try {
+      // Use transaction for atomic updates
+      const result = await this.prisma.$transaction(async (prisma) => {
+        // Create member
+        await prisma.channelMember.create({
+          data: {
+            userId,
+            channelId,
+            role: MemberRole.MEMBER,
+          },
+        });
 
-    return {
-      success: true,
-      channel: {
-        id: channel.id,
-        name: channel.name,
-        type: channel.type,
-      },
-    };
+        // Update channel member count
+        const updatedChannel = await prisma.channel.update({
+          where: { id: channelId },
+          data: {
+            memberCount: {
+              increment: 1
+            }
+          },
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          }
+        });
+
+        return updatedChannel;
+      });
+
+      // Invalidate all relevant caches
+      await Promise.all([
+        this.cacheService.invalidateChannelMembership(userId, channelId),
+        this.cacheService.invalidateChannelList(userId),
+        this.cacheService.invalidateChannelActivity(channelId)
+      ]);
+
+      return {
+        success: true,
+        channel: result
+      };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        throw new NetworkConnectivityException();
+      }
+      throw error;
+    }
   }
 
   async leaveChannel(userId: string, channelId: string): Promise<ChannelLeaveResponse> {
@@ -159,14 +238,51 @@ export class BrowseService {
           userId,
         },
       },
-   });
+      include: {
+        channel: true
+      }
+    });
 
     if (!membership) {
       throw new NotFoundException('Not a member of this channel');
     }
 
-    await this.channelsService.leave(userId, channelId, false);
-    return { success: true };
+    try {
+      // Use transaction for atomic updates
+      await this.prisma.$transaction(async (prisma) => {
+        // Delete membership
+        await prisma.channelMember.delete({
+          where: {
+            channelId_userId: {
+              channelId,
+              userId,
+            },
+          },
+        });
+
+        // Update channel member count
+        await prisma.channel.update({
+          where: { id: channelId },
+          data: {
+            memberCount: {
+              decrement: 1
+            }
+          }
+        });
+      });
+
+      // Invalidate all relevant caches
+      await Promise.all([
+        this.cacheService.invalidateChannelMembership(userId, channelId),
+        this.cacheService.invalidateChannelList(userId),
+        this.cacheService.invalidateChannelActivity(channelId)
+      ]);
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error in leaveChannel:', error);
+      throw error;
+    }
   }
 
   async getChannelMembers(userId: string, channelId: string): Promise<ChannelMembersResponse> {
@@ -226,15 +342,25 @@ export class BrowseService {
   }
 
   private getOrderByClause(sortBy?: ChannelSortBy, sortOrder: SortOrder = 'desc') {
+    console.log('Generating order by clause:', { sortBy, sortOrder });
+    
     switch (sortBy) {
       case 'memberCount':
-        return { members: { _count: sortOrder } };
+        return { memberCount: sortOrder };
       case 'messages':
-        return { messages: { _count: sortOrder } };
+        return { 
+          _count: {
+            messages: sortOrder 
+          }
+        };
       case 'name':
         return { name: sortOrder };
       case 'joinedAt':
-        return { members: { joinedAt: sortOrder } };
+        return { 
+          members: {
+            _count: sortOrder
+          }
+        };
       case 'createdAt':
       default:
         return { createdAt: sortOrder };
