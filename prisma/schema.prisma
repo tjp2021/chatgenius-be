@@ -34,6 +34,10 @@ model User {
   messages        Message[]
   navigationHistory ChannelNavigation[]
   drafts         ChannelDraft[]
+  reactions      Reaction[]
+  readReceipts   ReadReceipt[]
+  receivedInvitations ChannelInvitation[] @relation("ReceivedInvitations")
+  sentInvitations     ChannelInvitation[] @relation("SentInvitations")
 
   @@map("users")
 }
@@ -54,6 +58,7 @@ model Channel {
   messages       Message[]
   navigationHistory ChannelNavigation[]
   drafts         ChannelDraft[]
+  invitations    ChannelInvitation[]
 
   @@map("channels")
 }
@@ -98,22 +103,76 @@ enum MessageDeliveryStatus {
 }
 
 model Message {
-  id             String    @id @default(uuid())
-  content        String
-  channelId      String
-  userId         String
-  parentId       String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id          String      @id @default(cuid())
+  content     String
+  channelId   String
+  userId      String
+  parentId    String?
+  replyCount  Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
   deliveryStatus MessageDeliveryStatus @default(SENT)
-
+  
   // Relations
-  channel   Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parent    Message?   @relation("MessageReplies", fields: [parentId], references: [id], onDelete: SetNull)
-  replies   Message[]  @relation("MessageReplies")
+  channel     Channel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent      Message?    @relation("ThreadReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies     Message[]   @relation("ThreadReplies")
+  reactions   Reaction[]
+  readBy      ReadReceipt[]
+  attachments Attachment[]
 
   @@map("messages")
+  @@index([channelId])
+  @@index([userId])
+  @@index([parentId])
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+  
+  // Relations
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reactions")
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@index([userId])
+}
+
+model ReadReceipt {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+  
+  // Relations
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("read_receipts")
+  @@index([messageId])
+  @@index([userId])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  messageId String
+  url       String
+  type      String   
+  name      String
+  createdAt DateTime @default(now())
+  
+  // Relations
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+  @@index([messageId])
 }
 
 enum ChannelType {
@@ -144,4 +203,32 @@ model ChannelDraft {
   @@map("channel_drafts")
   @@index([userId])
   @@index([channelId])
+}
+
+model ChannelInvitation {
+  id          String      @id @default(uuid())
+  channelId   String
+  userId      String
+  inviterId   String
+  role        MemberRole  @default(MEMBER)
+  status      InvitationStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+  expiresAt   DateTime?
+
+  // Relations
+  channel     Channel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user        User        @relation("ReceivedInvitations", fields: [userId], references: [id], onDelete: Cascade)
+  inviter     User        @relation("SentInvitations", fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@map("channel_invitations")
+  @@index([userId])
+  @@index([channelId])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
 }

@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsEnum, ValidateIf } from 'class-validator';
 import { ChannelType } from '@prisma/client';
 
 export class CreateChannelDto {
@@ -11,4 +11,8 @@ export class CreateChannelDto {
 
   @IsEnum(ChannelType)
   type: ChannelType;
+
+  @IsString()
+  @ValidateIf(o => o.type === ChannelType.DM)
+  targetUserId?: string;
 } 

@@ -1,43 +1,19 @@
-import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
+import { Module, forwardRef } from '@nestjs/common';
 import { ChannelsService } from './channels.service';
 import { ChannelsController } from './channels.controller';
-import { DraftService } from './draft.service';
-import { DraftController } from './draft.controller';
-import { DraftCleanupService } from './draft-cleanup.service';
-import { NavigationService } from './navigation.service';
-import { NavigationController } from './navigation.controller';
-import { BrowseService } from './browse.service';
-import { BrowseController } from './browse.controller';
 import { PrismaModule } from '../prisma/prisma.module';
+import { MessageModule } from '../message/message.module';
 import { RedisCacheModule } from '../cache/redis.module';
-import { AuthModule } from '../auth/auth.module';
+import { MessageGateway } from '../gateways/message.gateway';
 
 @Module({
   imports: [
-    ScheduleModule.forRoot(),
     PrismaModule,
-    RedisCacheModule,
-    AuthModule,
+    forwardRef(() => MessageModule),
+    RedisCacheModule
   ],
-  controllers: [
-    ChannelsController,
-    DraftController,
-    NavigationController,
-    BrowseController,
-  ],
-  providers: [
-    ChannelsService,
-    DraftService,
-    DraftCleanupService,
-    NavigationService,
-    BrowseService,
-  ],
-  exports: [
-    ChannelsService,
-    DraftService,
-    NavigationService,
-    BrowseService,
-  ],
+  controllers: [ChannelsController],
+  providers: [ChannelsService, MessageGateway],
+  exports: [ChannelsService]
 })
 export class ChannelsModule {} 

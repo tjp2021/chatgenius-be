@@ -94,6 +94,75 @@
           }
         }
       }
+    },
+    "developmentGuidelines": {
+      "socketCommunication": {
+        "rules": [
+          "Never mix HTTP state changes with WebSocket real-time updates",
+          "Always validate authentication at both connection and message level",
+          "Implement proper reconnection and error handling strategies",
+          "Use clear event naming conventions and payload structures"
+        ],
+        "bestPractices": {
+          "authentication": "Validate at connection and message level",
+          "eventNaming": "Use consistent patterns like 'entity:action' (e.g., 'message:send')",
+          "errorHandling": "Implement systematic reconnection and error recovery"
+        }
+      },
+      "stateManagement": {
+        "rules": [
+          "Keep a single source of truth (server-side)",
+          "Avoid complex client-side cache manipulation",
+          "Use simple, predictable socket event handlers",
+          "Implement clear data invalidation strategies"
+        ],
+        "bestPractices": {
+          "caching": "Simple, predictable invalidation patterns",
+          "stateFlow": "One-way data flow from server to client",
+          "updates": "Use WebSocket events for real-time UI updates"
+        }
+      },
+      "channelManagement": {
+        "rules": [
+          "Separate membership management (HTTP) from real-time updates (WebSocket)",
+          "Implement proper cache invalidation for both channel list and membership status",
+          "Use WebSocket events for real-time UI updates",
+          "Handle race conditions between operations"
+        ],
+        "bestPractices": {
+          "membership": "HTTP endpoints for state changes",
+          "updates": "WebSocket events for real-time notifications",
+          "caching": "Invalidate both list and membership caches"
+        }
+      },
+      "messageHandling": {
+        "rules": [
+          "Implement proper message delivery confirmation",
+          "Handle offline messages using a queue system",
+          "Use typing indicators correctly",
+          "Maintain clear message state transitions"
+        ],
+        "bestPractices": {
+          "delivery": "Implement acknowledgment system",
+          "offline": "Queue messages for offline users",
+          "typing": "Use debounced typing indicators",
+          "state": "Clear transition states (sending → sent → delivered)"
+        }
+      },
+      "developmentProcess": {
+        "rules": [
+          "Follow systematic debugging with unique identifiers",
+          "Document all significant changes and lessons",
+          "Implement comprehensive testing for new features",
+          "Keep code changes focused and well-documented"
+        ],
+        "bestPractices": {
+          "debugging": "Use CG-{YYYYMMDD}-{sequential_number} format",
+          "documentation": "Update relevant documentation with changes",
+          "testing": "Add tests for new features and bug fixes",
+          "codeQuality": "Keep changes focused and maintainable"
+        }
+      }
     }
   },
   "examples": {

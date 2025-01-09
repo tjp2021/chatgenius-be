@@ -1,6 +1,10 @@
-import { IsString, IsNumber, IsOptional } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsUUID, IsDate, IsEnum } from 'class-validator';
+import { ChannelType } from '@prisma/client';
 
 export class ChannelMetadataDto {
+  @IsUUID()
+  id: string;
+
   @IsString()
   name: string;
 
@@ -8,11 +12,17 @@ export class ChannelMetadataDto {
   @IsOptional()
   description?: string;
 
-  @IsNumber()
-  unreadCount: number;
+  @IsEnum(ChannelType)
+  type: ChannelType;
 
   @IsNumber()
   memberCount: number;
+
+  @IsDate()
+  lastActivity: Date;
+
+  @IsNumber()
+  unreadCount: number;
 
   @IsString()
   @IsOptional()

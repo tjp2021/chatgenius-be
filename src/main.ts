@@ -46,8 +46,11 @@ async function bootstrap() {
   // Configure WebSocket adapter
   app.useWebSocketAdapter(new IoAdapter(app));
   
-  // Global validation pipe
-  app.useGlobalPipes(new ValidationPipe());
+  // Global validation pipe with transformation enabled
+  app.useGlobalPipes(new ValidationPipe({
+    transform: true,
+    transformOptions: { enableImplicitConversion: true }
+  }));
   
   // Start server
   await app.listen(PORT);

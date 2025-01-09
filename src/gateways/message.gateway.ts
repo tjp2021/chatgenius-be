@@ -9,9 +9,10 @@ import { Logger } from '@nestjs/common';
 import { MessageService } from '../message/message.service';
 import { MessageEvent } from '../message/dto/message-events.enum';
 import { MessageEventDto } from '../message/dto/message-event.dto';
-import { TypingIndicatorDto } from '../message/dto/typing-indicator.dto';
+import { TypingIndicatorDto, TypingStatus } from '../message/dto/typing-indicator.dto';
 import { MessageDeliveryDto } from '../message/dto/message-delivery.dto';
 import { MessageDeliveryStatus } from '../message/dto/message-events.enum';
+import { RedisCacheService } from '../cache/redis.service';
 
 @WebSocketGateway({
   cors: {
@@ -27,7 +28,16 @@ export class MessageGateway {
 
   constructor(
     private messageService: MessageService,
+    private cacheService: RedisCacheService,
   ) {}
+
+  private handleError(client: Socket, error: any) {
+    this.logger.error('WebSocket Error:', error);
+    client.emit(MessageEvent.ERROR, {
+      message: error.message || 'Internal server error',
+      code: error.code || 'INTERNAL_ERROR'
+    });
+  }
 
   @SubscribeMessage(MessageEvent.SEND)
   async handleMessageSend(client: Socket, payload: MessageEventDto) {
@@ -37,11 +47,8 @@ export class MessageGateway {
         throw new WsException('Unauthorized');
       }
 
-      // Create message with pending status
-      const message = await this.messageService.create(userId, {
-        ...payload,
-        deliveryStatus: MessageDeliveryStatus.SENT
-      });
+      // Create message
+      const message = await this.messageService.create(userId, payload);
 
       // Broadcast to channel room
       this.server.to(`channel:${payload.channelId}`).emit(MessageEvent.NEW, message);
@@ -49,53 +56,12 @@ export class MessageGateway {
       // Confirm to sender
       client.emit(MessageEvent.SENT, {
         messageId: message.id,
-        channelId: message.channelId,
         status: MessageDeliveryStatus.SENT
       });
 
       return message;
     } catch (error) {
-      this.logger.error(`Error sending message: ${error.message}`, error.stack);
-      client.emit(MessageEvent.ERROR, { error: error.message });
-      throw new WsException(error.message);
-    }
-  }
-
-  @SubscribeMessage(MessageEvent.TYPING_START)
-  async handleTypingStart(client: Socket, payload: TypingIndicatorDto) {
-    try {
-      const userId = client.handshake.auth.userId;
-      if (!userId) {
-        throw new WsException('Unauthorized');
-      }
-
-      this.server.to(`channel:${payload.channelId}`).emit(MessageEvent.TYPING_START, {
-        userId,
-        channelId: payload.channelId,
-        isTyping: true
-      });
-    } catch (error) {
-      this.logger.error(`Error handling typing indicator: ${error.message}`, error.stack);
-      throw new WsException(error.message);
-    }
-  }
-
-  @SubscribeMessage(MessageEvent.TYPING_STOP)
-  async handleTypingStop(client: Socket, payload: TypingIndicatorDto) {
-    try {
-      const userId = client.handshake.auth.userId;
-      if (!userId) {
-        throw new WsException('Unauthorized');
-      }
-
-      this.server.to(`channel:${payload.channelId}`).emit(MessageEvent.TYPING_STOP, {
-        userId,
-        channelId: payload.channelId,
-        isTyping: false
-      });
-    } catch (error) {
-      this.logger.error(`Error handling typing indicator: ${error.message}`, error.stack);
-      throw new WsException(error.message);
+      this.handleError(client, error);
     }
   }
 
@@ -107,17 +73,22 @@ export class MessageGateway {
         throw new WsException('Unauthorized');
       }
 
-      // Update message delivery status
-      await this.messageService.updateDeliveryStatus(
+      const message = await this.messageService.updateDeliveryStatus(
         payload.messageId,
+        userId,
         MessageDeliveryStatus.DELIVERED
       );
 
       // Notify sender of delivery
-      this.server.to(`user:${userId}`).emit(MessageEvent.DELIVERED, payload);
+      this.server.to(`user:${message.userId}`).emit(MessageEvent.DELIVERED, {
+        messageId: message.id,
+        userId,
+        status: MessageDeliveryStatus.DELIVERED
+      });
+
+      return message;
     } catch (error) {
-      this.logger.error(`Error handling message delivery: ${error.message}`, error.stack);
-      throw new WsException(error.message);
+      this.handleError(client, error);
     }
   }
 
@@ -129,17 +100,128 @@ export class MessageGateway {
         throw new WsException('Unauthorized');
       }
 
-      // Update message read status
-      await this.messageService.updateDeliveryStatus(
+      const message = await this.messageService.updateDeliveryStatus(
         payload.messageId,
+        userId,
         MessageDeliveryStatus.READ
       );
 
-      // Notify sender that message was read
-      this.server.to(`user:${userId}`).emit(MessageEvent.READ, payload);
+      // Notify sender of read status
+      this.server.to(`user:${message.userId}`).emit(MessageEvent.READ, {
+        messageId: message.id,
+        userId,
+        status: MessageDeliveryStatus.READ
+      });
+
+      return message;
     } catch (error) {
-      this.logger.error(`Error handling message read status: ${error.message}`, error.stack);
-      throw new WsException(error.message);
+      this.handleError(client, error);
+    }
+  }
+
+  @SubscribeMessage(MessageEvent.TYPING_START)
+  async handleTypingStart(client: Socket, payload: TypingIndicatorDto) {
+    try {
+      const userId = client.handshake.auth.userId;
+      if (!userId) {
+        throw new WsException('Unauthorized');
+      }
+
+      const typingStatus: TypingStatus = {
+        userId,
+        channelId: payload.channelId,
+        isTyping: true,
+        timestamp: new Date()
+      };
+
+      await this.cacheService.setTypingStatus(payload.channelId, typingStatus);
+
+      // Broadcast typing status to channel
+      this.server.to(`channel:${payload.channelId}`).emit(MessageEvent.TYPING_START, {
+        userId,
+        channelId: payload.channelId
+      });
+    } catch (error) {
+      this.handleError(client, error);
+    }
+  }
+
+  @SubscribeMessage(MessageEvent.TYPING_STOP)
+  async handleTypingStop(client: Socket, payload: TypingIndicatorDto) {
+    try {
+      const userId = client.handshake.auth.userId;
+      if (!userId) {
+        throw new WsException('Unauthorized');
+      }
+
+      const typingStatus: TypingStatus = {
+        userId,
+        channelId: payload.channelId,
+        isTyping: false,
+        timestamp: new Date()
+      };
+
+      await this.cacheService.setTypingStatus(payload.channelId, typingStatus);
+
+      // Broadcast typing status to channel
+      this.server.to(`channel:${payload.channelId}`).emit(MessageEvent.TYPING_STOP, {
+        userId,
+        channelId: payload.channelId
+      });
+    } catch (error) {
+      this.handleError(client, error);
+    }
+  }
+
+  async handleConnection(client: Socket) {
+    try {
+      const userId = client.handshake.auth.userId;
+      if (!userId) {
+        throw new WsException('Unauthorized');
+      }
+
+      // Join user's personal room for direct messages
+      client.join(`user:${userId}`);
+
+      // Get and deliver any offline messages
+      const offlineMessages = await this.messageService.getOfflineMessages(userId);
+      if (offlineMessages.length > 0) {
+        client.emit(MessageEvent.OFFLINE_MESSAGES, offlineMessages);
+      }
+    } catch (error) {
+      this.handleError(client, error);
+      client.disconnect();
+    }
+  }
+
+  async handleDisconnect(client: Socket) {
+    try {
+      const userId = client.handshake.auth.userId;
+      if (userId) {
+        // Clear typing status in all channels
+        const rooms = client.rooms;
+        for (const room of rooms) {
+          if (room.startsWith('channel:')) {
+            const channelId = room.replace('channel:', '');
+            const typingStatus: TypingStatus = {
+              userId,
+              channelId,
+              isTyping: false,
+              timestamp: new Date()
+            };
+            
+            await this.cacheService.setTypingStatus(channelId, typingStatus);
+            
+            // Notify channel that user stopped typing
+            this.server.to(room).emit(MessageEvent.TYPING_STOP, {
+              userId,
+              channelId
+            });
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error('Disconnect error:', error);
     }
   }
 } 
