@@ -116,3 +116,189 @@ Learning Lessons [CG-20240108-002]
   4. Create automated tests for concurrent operations
 
 ==================================================================
+
+Problem Analysis [CG-20240108-003]
+- **ID**: CG-20240108-003
+- **Error Description**: Multiple socket-related issues in channel joining flow:
+  1. Initial "Unauthorized" socket errors
+  2. "Already a member of this channel" errors
+  3. Public channels sidebar not updating in real-time
+- **Root Cause Hypotheses**: 
+  1. Socket authentication issues (token/userId validation)
+  2. Double-join attempts (HTTP + Socket)
+  3. Event emission mismatches between frontend/backend
+- **Steps to Reproduce**:
+  1. Click "Join Channel" in UI
+  2. HTTP API successfully creates membership
+  3. Socket attempts to join room
+  4. Error occurs due to duplicate join attempt
+- **Logs/Info**: Socket errors showing "Already a member" and "Unauthorized" messages
+
+Solution Walkthrough [CG-20240108-003]
+- **ID**: CG-20240108-003
+- **Solution Description**: 
+  1. Fixed socket authentication by properly validating token and userId
+  2. Separated HTTP channel join from socket room join
+  3. Changed socket handler to verify membership instead of attempting to join again
+- **Why It Worked**: 
+  1. Clear separation of concerns: HTTP handles membership, socket handles real-time updates
+  2. Proper authentication flow with JWT validation
+  3. Correct event emission sequence for UI updates
+- **Key Changes**:
+  1. Added proper JWT validation in handleConnection
+  2. Modified handleChannelJoin to verify membership instead of joining
+  3. Implemented proper error handling and event emissions
+
+Learning Lessons [CG-20240108-003]
+- **ID**: CG-20240108-003
+- **Pattern Recognition**: 
+  1. Socket authentication needs to be handled separately from HTTP auth
+  2. Real-time features often have race conditions between HTTP and WebSocket operations
+  3. Event-driven architectures need clear separation between state changes and notifications
+- **Prevention Strategies**:
+  1. Always separate data mutations (HTTP) from real-time updates (WebSocket)
+  2. Implement proper authentication checks at both connection and message levels
+  3. Use clear event naming and payload structures
+- **Best Practices Learned**:
+  1. Socket handlers should verify state, not modify it
+  2. Authentication should be validated at connection time
+  3. Clear error messages help identify issues quickly
+- **Future Recommendations**:
+  1. Document WebSocket events and payloads clearly
+  2. Implement proper TypeScript interfaces for all events
+  3. Add logging for socket lifecycle events
+  4. Create automated tests for WebSocket flows
+
+==================================================================
+
+Problem Analysis [CG-20240108-004]
+- **ID**: CG-20240108-004
+- **Error Description**: Real-time message handling implementation is incomplete with several missing critical components:
+  1. No WebSocket events for message CRUD operations
+  2. Missing typing indicators
+  3. No message delivery confirmation system
+  4. Lack of proper error handling for message events
+  5. No handling of offline messages/reconnection
+- **Root Cause Hypotheses**: 
+  1. Current WebSocket implementation focuses on connection/presence but not message events
+  2. Message service and socket gateway are not properly integrated
+  3. Missing event definitions and handlers for message operations
+  4. No clear protocol for message delivery confirmation
+  5. Lack of proper error propagation between services
+- **Steps to Reproduce**:
+  1. Current message creation only uses HTTP endpoint
+  2. No real-time updates when messages are created/updated
+  3. No indication of message delivery status
+  4. No typing indicators when users are composing messages
+  5. Messages may be lost during connection issues
+- **Logs or Relevant Information**:
+  ```typescript
+  // Current message creation only uses HTTP
+  @Post()
+  create(@User() userId: string, @Body() dto: CreateMessageDto) {
+    return this.messageService.create(userId, dto);
+  }
+
+  // Socket gateway missing message event handlers
+  // No integration between MessageService and SocketGateway
+  // No message delivery confirmation system
+  ```
+
+Solution Walkthrough [CG-20240108-004]
+- **ID**: CG-20240108-004
+- **Solution Description**: Integrate real-time message handling into existing socket.gateway.ts and message.service.ts:
+  1. Add message event handlers in SocketGateway
+  2. Extend MessageService to emit socket events
+  3. Implement message delivery confirmation
+  4. Add typing indicator handling
+  5. Implement offline message queue using Redis
+- **Why It Works**: 
+  1. Builds on existing authentication and channel membership verification
+  2. Maintains separation between HTTP (state changes) and WebSocket (real-time updates)
+  3. Uses Redis for reliable message queuing and delivery tracking
+  4. Leverages existing channel room structure for message broadcasting
+- **Implementation Steps**:
+  ```typescript
+  // 1. Add message events to socket.gateway.ts
+  @SubscribeMessage('message:send')
+  async handleMessageSend(client: Socket, payload: CreateMessageDto) {
+    try {
+      const userId = client.handshake.auth.userId;
+      const message = await this.messageService.create(userId, payload);
+      
+      // Broadcast to channel room
+      this.server.to(`channel:${payload.channelId}`).emit('message:new', message);
+      
+      // Send delivery confirmation to sender
+      client.emit('message:sent', { messageId: message.id });
+      
+      return message;
+    } catch (error) {
+      this.handleError(client, error);
+    }
+  }
+
+  @SubscribeMessage('message:typing')
+  async handleTypingIndicator(client: Socket, payload: { channelId: string, isTyping: boolean }) {
+    const userId = client.handshake.auth.userId;
+    this.server.to(`channel:${payload.channelId}`).emit('user:typing', { 
+      userId, 
+      channelId: payload.channelId,
+      isTyping: payload.isTyping 
+    });
+  }
+
+  // 2. Extend message.service.ts to handle offline messages
+  async create(userId: string, dto: CreateMessageDto) {
+    const message = await this.prisma.message.create({
+      data: {
+        content: dto.content,
+        channelId: dto.channelId,
+        userId,
+        parentId: dto.parentId,
+        deliveryStatus: 'pending'
+      },
+      include: {
+        user: true,
+      },
+    });
+
+    // Queue message for offline users
+    const offlineMembers = await this.getOfflineChannelMembers(dto.channelId);
+    if (offlineMembers.length > 0) {
+      await this.cacheService.queueOfflineMessages(offlineMembers, message);
+    }
+
+    return message;
+  }
+  ```
+- **Key Lessons**:
+  1. Keep message sending logic in socket handlers for real-time delivery
+  2. Use HTTP endpoints as fallback for poor connections
+  3. Track message delivery status in database
+  4. Queue messages for offline users
+
+Learning Lessons [CG-20240108-004]
+- **ID**: CG-20240108-004
+- **Pattern Recognition**: 
+  1. Existing codebase has solid foundation for authentication and channel management
+  2. Current HTTP endpoints work well for basic message CRUD
+  3. Socket gateway already handles room management and presence
+  4. Clear separation between state management (HTTP) and real-time updates (WebSocket)
+- **Prevention Strategies**:
+  1. Create new handlers instead of modifying existing ones
+  2. Keep message-specific logic in dedicated classes/methods
+  3. Reuse existing authentication and room management
+  4. Add new DTOs for message-specific events
+- **Best Practices Learned**:
+  1. Follow Single Responsibility Principle by separating message handling from channel management
+  2. Stay DRY by reusing existing authentication and room management code
+  3. Preserve working functionality by adding rather than modifying
+  4. Use TypeScript interfaces to ensure type safety in new code
+- **Future Recommendations**:
+  1. Create MessageGateway class for message-specific socket handlers
+  2. Add MessageEvents enum/const for event name management
+  3. Implement MessageQueue service for offline message handling
+  4. Create separate DTOs for each message event type
+
+==================================================================

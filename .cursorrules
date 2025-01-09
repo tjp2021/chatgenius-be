@@ -107,3 +107,6 @@
     "learningLessonsEntry": "Learning Lessons [CG-20231218-001]\n\n- **ID**: CG-20231218-001\n- **Pattern Recognition**: Incomplete API endpoint updates across components\n- **Prevention Strategies**: Implement systematic dependency checking\n- **Best Practices Learned**: Update all related components when changing APIs\n- **Future Recommendations**: Create automated tests for API consistency\n\n==================================================================\n"
   }
 }
+
+
+DO NOT ADD THINGS TO BRAINLIFT.MD UNLESS I EXPLICITLY SAY SO

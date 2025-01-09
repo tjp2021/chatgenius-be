@@ -16,6 +16,7 @@ import { SaveDraftDto } from '../channels/dto/save-draft.dto';
 import { Logger } from '@nestjs/common';
 import { ScrollPositionDto } from '../channels/dto/scroll-position.dto';
 import { MetadataUpdateDto } from '../channels/dto/metadata-update.dto';
+import { JwtService } from '../auth/jwt.service';
 
 @WebSocketGateway({
   cors: {
@@ -34,23 +35,46 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private draftService: DraftService,
     private channelsService: ChannelsService,
     private browseService: BrowseService,
+    private jwtService: JwtService,
   ) {}
 
   async handleConnection(client: Socket) {
-    const userId = client.handshake.auth.userId;
-    if (!userId) return;
+    try {
+      const { userId, token } = client.handshake.auth;
+      
+      if (!userId) {
+        throw new WsException('Missing userId in auth credentials');
+      }
+      if (!token) {
+        throw new WsException('Missing token in auth credentials');
+      }
 
-    // Join user's room
-    client.join(`user:${userId}`);
+      // Validate token with JWT service
+      try {
+        const { isValid, user } = await this.jwtService.validateToken(token);
+        if (!isValid || user.id !== userId) {
+          throw new WsException('Invalid authentication token');
+        }
+      } catch (error) {
+        throw new WsException('Invalid authentication token');
+      }
 
-    // Update online status
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { isOnline: true },
-    });
+      // Join user's room
+      client.join(`user:${userId}`);
 
-    // Notify others
-    this.server.emit('presence:update', { userId, isOnline: true });
+      // Update online status
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { isOnline: true },
+      });
+
+      // Notify others
+      this.server.emit('presence:update', { userId, isOnline: true });
+      
+    } catch (error) {
+      this.handleError(client, error);
+      client.disconnect();
+    }
   }
 
   async handleDisconnect(client: Socket) {
@@ -126,46 +150,11 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   async emitMemberJoined(channelId: string, userId: string, userName: string) {
-    // Get full channel and membership data
-    const membership = await this.prisma.channelMember.findUnique({
-      where: {
-        channelId_userId: {
-          channelId,
-          userId
-        }
-      },
-      include: {
-        channel: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            type: true,
-            memberCount: true
-          }
-        },
-        user: {
-          select: {
-            id: true,
-            name: true,
-            imageUrl: true,
-            isOnline: true
-          }
-        }
-      }
-    });
-
-    if (!membership) {
-      this.logger.error(`Failed to emit member joined: membership not found for ${userId} in ${channelId}`);
-      return;
-    }
-
     this.server.to(`channel:${channelId}`).emit('channel:member_joined', {
-      channelId: membership.channelId,
-      userId: membership.userId,
-      role: membership.role,
-      channel: membership.channel,
-      user: membership.user
+      channelId,
+      userId,
+      userName,
+      timestamp: new Date().toISOString()
     });
   }
 
@@ -186,8 +175,19 @@ export class SocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const { channelId } = payload;
 
-      // Join the channel through the channels service
-      await this.channelsService.join(userId, channelId);
+      // Verify membership instead of joining
+      const membership = await this.prisma.channelMember.findUnique({
+        where: {
+          channelId_userId: {
+            channelId,
+            userId
+          }
+        }
+      });
+
+      if (!membership) {
+        throw new WsException('Not a member of this channel');
+      }
 
       // Join the socket room
       client.join(`channel:${channelId}`);

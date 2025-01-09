@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { ChannelsService } from '../channels/channels.service';
+import { MessageDeliveryStatus } from './dto/message-events.enum';
 
 @Injectable()
 export class MessageService {
@@ -17,6 +18,7 @@ export class MessageService {
         channelId: dto.channelId,
         userId,
         parentId: dto.parentId,
+        deliveryStatus: dto.deliveryStatus || MessageDeliveryStatus.SENT,
       },
       include: {
         user: true,
@@ -29,6 +31,15 @@ export class MessageService {
     return message;
   }
 
+  async updateDeliveryStatus(messageId: string, status: MessageDeliveryStatus) {
+    return this.prisma.message.update({
+      where: { id: messageId },
+      data: {
+        deliveryStatus: status,
+      },
+    });
+  }
+
   async findAll(channelId: string, cursor?: string) {
     return this.prisma.message.findMany({
       take: 50,
@@ -38,7 +49,7 @@ export class MessageService {
         channelId,
       },
       orderBy: {
-        createdAt: 'desc',
+        createdAt: 'asc',
       },
       include: {
         user: true,

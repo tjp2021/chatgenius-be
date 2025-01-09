@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsEnum } from 'class-validator';
+import { MessageDeliveryStatus } from './message-events.enum';
 
 export class CreateMessageDto {
   @IsString()
@@ -10,4 +11,8 @@ export class CreateMessageDto {
   @IsUUID()
   @IsOptional()
   parentId?: string;
+
+  @IsEnum(MessageDeliveryStatus)
+  @IsOptional()
+  deliveryStatus?: MessageDeliveryStatus;
 } 

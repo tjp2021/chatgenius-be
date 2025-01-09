@@ -7,6 +7,7 @@ import { TokenBlacklistService } from './token-blacklist.service';
 import { TerminusModule } from '@nestjs/terminus';
 import { HttpModule } from '@nestjs/axios';
 import { HealthController } from './health.controller';
+import { JwtService } from './jwt.service';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { HealthController } from './health.controller';
     HttpModule,
   ],
   controllers: [WebhookController, HealthController],
-  providers: [RateLimitGuard, TokenBlacklistService],
-  exports: [RateLimitGuard, TokenBlacklistService],
+  providers: [RateLimitGuard, TokenBlacklistService, JwtService],
+  exports: [RateLimitGuard, TokenBlacklistService, JwtService],
 })
 export class AuthModule {}

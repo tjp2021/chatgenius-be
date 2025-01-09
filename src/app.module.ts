@@ -3,10 +3,12 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
-import { ChannelsModule } from './channels/channels.module';
+import { MessageModule } from './message/message.module';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
-import { MessageModule } from './message/message.module';
+import { ChannelsModule } from './channels/channels.module';
+import { GatewayModule } from './gateways/gateway.module';
+import { MessageGatewayModule } from './gateways/message-gateway.module';
 import { RedisCacheModule } from './cache/redis.module';
 import { SocketGateway } from './gateways/socket.gateway';
 
@@ -14,10 +16,12 @@ import { SocketGateway } from './gateways/socket.gateway';
   imports: [
     ConfigModule.forRoot(),
     PrismaModule,
-    ChannelsModule,
+    MessageModule,
     AuthModule,
     UserModule,
-    MessageModule,
+    ChannelsModule,
+    GatewayModule,
+    MessageGatewayModule,
     RedisCacheModule,
   ],
   controllers: [AppController],

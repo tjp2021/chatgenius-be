@@ -90,20 +90,28 @@ model ChannelNavigation {
   @@map("channel_navigation")
 }
 
+enum MessageDeliveryStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
 model Message {
-  id        String    @id @default(uuid())
-  content   String
-  channelId String
-  userId    String
-  parentId  String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id             String    @id @default(uuid())
+  content        String
+  channelId      String
+  userId         String
+  parentId       String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deliveryStatus MessageDeliveryStatus @default(SENT)
 
   // Relations
-  channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parent    Message?  @relation("ThreadReplies", fields: [parentId], references: [id])
-  replies   Message[] @relation("ThreadReplies")
+  channel   Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    Message?   @relation("MessageReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies   Message[]  @relation("MessageReplies")
 
   @@map("messages")
 }
