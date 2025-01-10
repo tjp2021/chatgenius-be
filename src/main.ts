@@ -51,6 +51,9 @@ async function bootstrap() {
   // Configure WebSocket adapter
   app.useWebSocketAdapter(new IoAdapter(app));
   
+  // Set global API prefix
+  app.setGlobalPrefix('api');
+  
   // Global validation pipe with transformation enabled
   app.useGlobalPipes(new ValidationPipe({
     transform: true,

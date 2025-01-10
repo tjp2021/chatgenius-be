@@ -3,12 +3,14 @@ import { EventService } from '../../core/events/event.service';
 import { CreateChannelDto, UpdateChannelDto, ChannelQuery, MemberRole } from './channel.types';
 import { PrismaChannelRepository } from './channel.repository';
 import { Channel, ChannelMember } from '../../core/events/event.types';
+import { PrismaService } from '../../core/database/prisma.service';
 
 @Injectable()
 export class ChannelService {
   constructor(
     private repository: PrismaChannelRepository,
     private events: EventService,
+    private prisma: PrismaService,
   ) {}
 
   async createChannel(userId: string, data: CreateChannelDto, memberIds?: string[]): Promise<Channel> {
@@ -161,16 +163,26 @@ export class ChannelService {
 
       // Transfer ownership to the next member
       const nextOwner = nonOwnerMembers[0];
-      await this.repository.update(channelId, {
-        channelId,
-        memberRole: {
-          userId: nextOwner.userId,
+      
+      // First update the next owner's role to OWNER
+      await this.prisma.channelMember.update({
+        where: {
+          channelId_userId: {
+            channelId: channelId,
+            userId: nextOwner.userId
+          }
+        },
+        data: {
           role: 'OWNER'
         }
       });
-    }
 
-    await this.repository.removeMember(channelId, userId);
+      // Then remove the old owner
+      await this.repository.removeMember(channelId, userId);
+    }
+    else {
+      await this.repository.removeMember(channelId, userId);
+    }
     
     // Emit member left event
     this.events.emit(channelId, 'channel.member_left', {

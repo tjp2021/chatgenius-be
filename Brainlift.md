@@ -553,7 +553,7 @@ Lessons Learned [CG-20240110-001]
 
 ==================================================================
 
-Problem Analysis [CG-20240111-001]
+Problem Analysis [CG-20240111-002]
 - **Issue Description**: Channel endpoints needed to include full member data with associated user information
 - **Symptoms**: 
   - Channel responses didn't include complete user data for members
@@ -570,7 +570,7 @@ Problem Analysis [CG-20240111-001]
   1. Prisma include patterns weren't consistently applied across repository methods
   2. Initial implementation focused on basic functionality without full relational data
 
-Solution Attempts [CG-20240111-001]
+Solution Attempts [CG-20240111-002]
 - **Attempt 1**: Modified findAll method
   - Result: Successful - Added nested include for user data in members
   - Learnings: Prisma's nested include pattern works well for this use case
@@ -579,7 +579,7 @@ Solution Attempts [CG-20240111-001]
   - Result: Successful - Standardized include pattern across all channel retrieval methods
   - Learnings: Consistency in data inclusion patterns improves API usability
 
-Final Solution [CG-20240111-001]
+Final Solution [CG-20240111-002]
 - **Solution Description**: Implemented consistent user data inclusion across all channel-related operations
 - **Implementation Details**: 
   - Added nested includes for user data in all relevant methods:
@@ -604,7 +604,7 @@ Final Solution [CG-20240111-001]
   - More consistent data structure across all endpoints
   - Reduced need for additional API calls
 
-Lessons Learned [CG-20240111-001]
+Lessons Learned [CG-20240111-002]
 - **Technical Insights**: 
   1. Prisma's nested includes are powerful for handling relational data
   2. Consistent data patterns across repository methods improve maintainability
@@ -624,5 +624,220 @@ Lessons Learned [CG-20240111-001]
   1. Channel endpoints now include complete member and user data
   2. No additional API calls needed for user details
   3. DM channels have immediate access to participant information
+
+==================================================================
+
+Problem Analysis [CG-20240111-003]
+- **Issue Description**: Channel leave request failing with 500 error due to incorrect backend port
+- **Symptoms**: 
+  - Frontend making POST request to http://localhost:3000/channels/{id}/leave
+  - Backend running on port 3001
+  - Request not reaching backend controller
+- **Impact**: 
+  - Users unable to leave channels
+  - Poor user experience
+  - Frontend showing error state
+- **Initial Investigation**: 
+  - Frontend code shows incorrect port in API configuration
+  - Backend explicitly running on port 3001 for ngrok tunneling
+  - Documentation shows inconsistent port usage
+- **Root Cause Hypotheses**: 
+  1. Frontend API base URL using incorrect port
+  2. Documentation inconsistency leading to implementation mismatch
+  3. Environment configuration not properly set up
+
+Solution Attempts [CG-20240111-003]
+- **Attempt 1**: Review backend configuration
+  - Result: Found backend explicitly running on port 3001
+  - Learnings: Port 3001 is required for ngrok tunneling
+
+Final Solution [CG-20240111-003]
+- **Solution Description**: Need to update frontend API configuration to use correct port
+- **Implementation Details**: 
+  Update frontend API base URL to use port 3001:
+  ```typescript
+  const api = axios.create({
+    baseURL: 'http://localhost:3001',  // Use HTTP and port 3001
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  ```
+- **Verification**: 
+  1. Verify API requests reach backend
+  2. Test channel leave functionality
+  3. Check other API endpoints still work
+- **Side Effects**: 
+  - All API requests will use correct port
+  - WebSocket connection should also use port 3001
+
+Lessons Learned [CG-20240111-003]
+- **Technical Insights**: 
+  1. Port configuration must be consistent across frontend and backend
+  2. Special port requirements (like ngrok) should be clearly documented
+  3. Environment configuration is critical for proper API communication
+
+- **Process Improvements**: 
+  1. Document port requirements clearly
+  2. Use environment variables for port configuration
+  3. Add port validation in development setup
+
+- **Prevention Strategies**: 
+  1. Add environment validation on frontend startup
+  2. Create development setup checklist
+  3. Add connection tests in development
+
+- **Documentation Updates**: 
+  1. Update all API documentation to show correct port
+  2. Add note about ngrok port requirement
+  3. Update development setup guide
+
+==================================================================
+
+Problem Analysis [CG-20240111-004]
+- **Issue Description**: Channel leave request failing due to incorrect protocol and port
+- **Symptoms**: 
+  - Frontend making request to https://localhost:3000/api/channels/{id}/leave
+  - Backend expecting http://localhost:3001/api/channels/{id}/leave
+  - Getting 500 Internal Server Error
+- **Impact**: 
+  - Users unable to leave channels
+  - Request failing due to protocol mismatch
+  - Port mismatch compounds the issue
+- **Initial Investigation**: 
+  - Frontend using HTTPS instead of HTTP
+  - Frontend using wrong port (3000 instead of 3001)
+  - Both issues preventing connection to backend
+
+Solution Attempts [CG-20240111-004]
+- **Attempt 1**: Review frontend API configuration
+  - Result: Found incorrect protocol and port configuration
+  - Learnings: Need to ensure both protocol and port match backend
+
+Final Solution [CG-20240111-004]
+- **Solution Description**: Update frontend API configuration with correct protocol and port
+- **Implementation Details**: 
+  ```typescript
+  const api = axios.create({
+    baseURL: 'http://localhost:3001',  // Use HTTP and port 3001
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  ```
+- **Verification**: 
+  1. Verify protocol is HTTP
+  2. Verify port is 3001
+  3. Test channel leave functionality
+- **Side Effects**: 
+  - All API requests will use correct protocol and port
+  - May need to update other frontend configurations
+
+Lessons Learned [CG-20240111-004]
+- **Technical Insights**: 
+  1. Protocol (HTTP/HTTPS) must match between frontend and backend
+  2. Local development often uses HTTP while production uses HTTPS
+  3. Port configuration must be consistent
+
+- **Process Improvements**: 
+  1. Document protocol requirements clearly
+  2. Use environment variables for protocol configuration
+  3. Add protocol validation in development setup
+
+- **Prevention Strategies**: 
+  1. Add protocol validation in API client setup
+  2. Create environment-specific configurations
+  3. Add connection tests that verify protocol
+
+- **Documentation Updates**: 
+  1. Update API documentation with protocol requirements
+  2. Add notes about local development setup
+  3. Document protocol differences between environments
+
+==================================================================
+
+Problem Analysis [CG-20240111-005]
+- **Issue Description**: Channel update failing due to incorrect Prisma update data structure
+- **Symptoms**: 
+  - Prisma error: "Unknown argument 'channelId'"
+  - Incorrect nested data structure for member role update
+  - Update operation failing with validation error
+- **Impact**: 
+  - Channel leave operation failing
+  - Owner transfer not working
+  - Poor user experience
+- **Initial Investigation**: 
+  - Data structure includes invalid 'channelId' field
+  - Member role update structure doesn't match Prisma's expectations
+  - Logs show incorrect data transformation
+- **Root Cause Hypotheses**: 
+  1. Incorrect data structure in UpdateChannelDto
+  2. Wrong transformation of data in service layer
+  3. Misunderstanding of Prisma's nested update syntax
+
+Solution Attempts [CG-20240111-005]
+- **Attempt 1**: Review Prisma schema and update structure
+  - Result: Found correct structure for member updates
+  - Learnings: Need to use Prisma's nested update syntax
+
+Final Solution [CG-20240111-005]
+- **Solution Description**: Update the data structure to match Prisma's expectations
+- **Implementation Details**: 
+  ```typescript
+  // WRONG structure:
+  data: {
+    channelId: "id",
+    memberRole: {
+      userId: "user_id",
+      role: "OWNER"
+    }
+  }
+
+  // CORRECT structure:
+  data: {
+    members: {
+      update: {
+        where: {
+          channelId_userId: {
+            channelId: channelId,
+            userId: userId
+          }
+        },
+        data: {
+          role: 'OWNER'
+        }
+      }
+    }
+  }
+  ```
+- **Verification**: 
+  1. Verify Prisma accepts the update structure
+  2. Test channel leave with owner transfer
+  3. Check member roles are updated correctly
+- **Side Effects**: 
+  - More predictable update behavior
+  - Cleaner data transformation
+  - Better type safety
+
+Lessons Learned [CG-20240111-005]
+- **Technical Insights**: 
+  1. Prisma has specific requirements for nested updates
+  2. Data transformation needs to match schema exactly
+  3. Type safety doesn't catch all Prisma validation issues
+
+- **Process Improvements**: 
+  1. Document Prisma update patterns
+  2. Add data structure validation
+  3. Create helper functions for common updates
+
+- **Prevention Strategies**: 
+  1. Create type-safe update builders
+  2. Add runtime validation for update structures
+  3. Document common update patterns
+
+- **Documentation Updates**: 
+  1. Add examples of correct update structures
+  2. Document member role update pattern
+  3. Update troubleshooting guide
 
 ==================================================================

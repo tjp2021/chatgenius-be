@@ -21,6 +21,19 @@ export interface UpdateChannelDto {
     userId: string;
     role: MemberRole;
   };
+  members?: {
+    update: {
+      where: {
+        channelId_userId: {
+          channelId: string;
+          userId: string;
+        }
+      };
+      data: {
+        role: MemberRole;
+      }
+    }
+  };
 }
 
 export interface ChannelQuery {
