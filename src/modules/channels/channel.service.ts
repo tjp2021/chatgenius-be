@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { EventService } from '../../core/events/event.service';
 import { CreateChannelDto, UpdateChannelDto, ChannelQuery, MemberRole } from './channel.types';
 import { PrismaChannelRepository } from './channel.repository';
@@ -11,12 +11,58 @@ export class ChannelService {
     private events: EventService,
   ) {}
 
-  async createChannel(userId: string, data: CreateChannelDto): Promise<Channel> {
-    const channel = await this.repository.create(userId, data);
+  async createChannel(userId: string, data: CreateChannelDto, memberIds?: string[]): Promise<Channel> {
+    const timestamp = new Date().toISOString();
+    console.log('=============== SERVICE CREATE START ===============');
+    console.log('STEP 1: Raw Input:', {
+      userId,
+      data,
+      memberIds
+    });
+
+    // Extract memberIds from data if it exists there
+    const extractedMemberIds = (data as any).memberIds || memberIds || [];
     
-    // Emit channel created event
-    this.events.emit(channel.id, 'channel.created', channel);
+    // Create clean data object without memberIds
+    const { memberIds: _, ...cleanData } = data as any;
+
+    console.log('STEP 2: Extracted Data:', {
+      cleanData,
+      extractedMemberIds
+    });
+
+    // For private channels, ensure memberIds is provided
+    if (cleanData.type === 'PRIVATE' && (!extractedMemberIds.length)) {
+      console.error('STEP X: Validation Error - No members for private channel');
+      throw new BadRequestException('Private channels must have at least one member besides the owner');
+    }
+
+    console.log('STEP 3: Calling Repository:', {
+      userId,
+      cleanData,
+      extractedMemberIds
+    });
+
+    // Pass clean data and memberIds to repository
+    const channel = await this.repository.create(userId, cleanData, extractedMemberIds);
     
+    console.log('STEP 4: Repository Response:', {
+      channelId: channel.id,
+      type: channel.type,
+      memberCount: channel.memberCount
+    });
+
+    // For private channels, we need to emit to all members
+    if (channel.type === 'PRIVATE') {
+      const members = await this.repository.findMembers(channel.id);
+      members.forEach(member => {
+        this.events.emitToUser(member.userId, 'channel.created', channel);
+      });
+    } else {
+      this.events.emit(channel.id, 'channel.created', channel);
+    }
+    
+    console.log('=============== SERVICE CREATE END ===============');
     return channel;
   }
 

@@ -18,12 +18,75 @@ export class ChannelGateway extends BaseGateway {
   @SubscribeMessage('createChannel')
   async handleCreateChannel(
     client: AuthenticatedSocket,
-    @MessageBody() payload: CreateChannelDto,
+    @MessageBody() payload: CreateChannelDto & { memberIds?: string[] } & { data?: any },
   ) {
+    const timestamp = new Date().toISOString();
+    console.log('=============== GATEWAY CREATE START ===============');
+    console.log('STEP 1: Raw Payload:', {
+      payload,
+      type: typeof payload,
+      keys: Object.keys(payload)
+    });
+
     try {
-      const channel = await this.channelService.createChannel(this.getClientUserId(client), payload);
+      if (!this.validateClient(client)) {
+        console.error(`[${timestamp}] ❌ Client validation failed`);
+        return this.error('Unauthorized');
+      }
+
+      console.log('STEP 2: Checking payload structure:', {
+        hasDataProp: 'data' in payload,
+        dataType: payload.data ? typeof payload.data : 'no data prop',
+        memberIdsInPayload: 'memberIds' in payload,
+        memberIdsInData: payload.data && 'memberIds' in payload.data,
+        payloadMemberIds: payload.memberIds,
+        dataMemberIds: payload.data?.memberIds
+      });
+
+      // Extract memberIds from the correct location
+      let memberIds: string[] = [];
+      if ('memberIds' in payload) {
+        memberIds = payload.memberIds || [];
+      } else if (payload.data && 'memberIds' in payload.data) {
+        memberIds = payload.data.memberIds || [];
+      }
+
+      console.log('STEP 3: Extracted memberIds:', { memberIds });
+      
+      // Create clean payload without memberIds
+      const cleanPayload: CreateChannelDto = {
+        name: payload.name || payload.data?.name,
+        type: payload.type || payload.data?.type,
+        description: payload.description || payload.data?.description || "",
+        ...(payload.targetUserId && { targetUserId: payload.targetUserId })
+      };
+
+      console.log('STEP 4: Final data for service:', {
+        cleanPayload,
+        memberIds
+      });
+
+      const channel = await this.channelService.createChannel(
+        client.userId,
+        cleanPayload,
+        memberIds
+      );
+
+      console.log('STEP 5: Service Response:', {
+        channelId: channel.id,
+        type: channel.type,
+        memberCount: channel.memberCount
+      });
+      console.log('=============== GATEWAY CREATE END ===============');
+
       return this.success(channel);
     } catch (error) {
+      console.error('STEP X: Error in gateway:', {
+        error: error.message,
+        stack: error.stack,
+        payload
+      });
+      console.log('=============== GATEWAY CREATE ERROR ===============');
       return this.error(error.message);
     }
   }

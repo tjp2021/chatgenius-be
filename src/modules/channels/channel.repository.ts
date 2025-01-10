@@ -8,28 +8,92 @@ import { ChannelType, MemberRole } from '@prisma/client';
 export class PrismaChannelRepository implements ChannelRepository {
   constructor(private prisma: PrismaService) {}
 
-  async create(userId: string, data: CreateChannelDto): Promise<Channel> {
-    const channelData = {
-      ...data,
-      type: data.type || ChannelType.PUBLIC,
+  async create(
+    userId: string, 
+    data: Omit<CreateChannelDto, 'memberIds'>,
+    memberIds?: string[]
+  ): Promise<Channel> {
+    const timestamp = new Date().toISOString();
+    
+    console.log('=============== CHANNEL CREATE START ===============');
+    console.log('STEP 1: Received Data:', {
+      userId,
+      data,
+      memberIds,
+      timestamp
+    });
+
+    // First, create the members array with proper typing
+    const members: Array<{ userId: string; role: MemberRole }> = [{
+      userId,
+      role: 'OWNER',
+    }];
+
+    if (memberIds?.length) {
+      const additionalMembers = memberIds
+        .filter(id => id && id !== userId)
+        .map(id => ({
+          userId: id,
+          role: 'MEMBER' as MemberRole
+        }));
+      members.push(...additionalMembers);
+    }
+
+    console.log('STEP 2: Processed Members:', {
+      members,
+      timestamp
+    });
+
+    // Create the exact data structure for Prisma
+    const createData = {
+      name: data.name,
+      description: data.description || "",
+      type: data.type as ChannelType,
+      createdById: userId,
+      memberCount: members.length,
+      members: {
+        createMany: {
+          data: members
+        }
+      }
     };
 
-    return this.prisma.channel.create({
-      data: {
-        ...channelData,
-        createdById: userId,
-        members: {
-          create: {
-            userId,
-            role: MemberRole.OWNER,
-          },
-        },
-      },
-      include: {
-        members: true,
-        createdBy: true,
-      },
+    console.log('STEP 3: Final Prisma Data:', {
+      createData: JSON.stringify(createData, null, 2),
+      timestamp
     });
+
+    try {
+      console.log('STEP 4: Calling Prisma');
+      const result = await this.prisma.channel.create({
+        data: createData,
+        include: {
+          members: {
+            include: {
+              user: true,
+            },
+          },
+          createdBy: true,
+        },
+      });
+
+      console.log('STEP 5: Prisma Result:', {
+        result: JSON.stringify(result, null, 2),
+        timestamp
+      });
+      console.log('=============== CHANNEL CREATE END ===============');
+
+      return result;
+    } catch (error) {
+      console.error('STEP X: Error in create:', {
+        error: error.message,
+        stack: error.stack,
+        data: JSON.stringify(createData, null, 2),
+        timestamp
+      });
+      console.log('=============== CHANNEL CREATE ERROR ===============');
+      throw error;
+    }
   }
 
   async update(channelId: string, data: UpdateChannelDto): Promise<Channel> {
