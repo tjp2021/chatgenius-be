@@ -16,7 +16,7 @@ import { clerkClient } from '@clerk/clerk-sdk-node';
 export class BaseGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   protected server: Server;
-  private readonly logger = new Logger(BaseGateway.name);
+  protected readonly logger = new Logger(BaseGateway.name);
 
   constructor(protected readonly eventService: EventService) {}
 
