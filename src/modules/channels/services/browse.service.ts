@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../../../core/database/prisma.service';
 import { ChannelType, MemberRole } from '../../../shared/types/prisma.types';
 import { Prisma } from '@prisma/client';
-import { ChannelsService } from '../channels.service';
+import { ChannelService } from '../channel.service';
 import { RedisCacheService } from '../../../core/cache/redis.service';
 import { NetworkConnectivityException } from '../errors/network-connectivity.exception';
 import {
@@ -20,7 +20,7 @@ import {
 export class BrowseService {
   constructor(
     private prisma: PrismaService,
-    private channelsService: ChannelsService,
+    private channelService: ChannelService,
     private cacheService: RedisCacheService,
   ) {}
 

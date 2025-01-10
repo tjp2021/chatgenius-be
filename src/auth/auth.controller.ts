@@ -1,11 +1,9 @@
 import { Controller, Post, Headers, UnauthorizedException } from '@nestjs/common';
-import { JwtService } from './jwt.service';
+import { clerkClient } from '@clerk/clerk-sdk-node';
 import { TokenValidationResponse } from './types/auth.types';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private jwtService: JwtService) {}
-
   @Post('validate')
   async validateToken(@Headers('authorization') authHeader: string): Promise<TokenValidationResponse> {
     if (!authHeader) {
@@ -18,6 +16,28 @@ export class AuthController {
       throw new UnauthorizedException('Invalid authorization type');
     }
 
-    return this.jwtService.validateToken(token);
+    try {
+      // Parse the JWT to get the session id
+      const [_header, payload] = token.split('.');
+      const decodedPayload = JSON.parse(Buffer.from(payload, 'base64').toString());
+      const sessionId = decodedPayload.sid;
+
+      if (!sessionId) {
+        throw new Error('Invalid token format: missing session id');
+      }
+
+      // Verify the session with Clerk
+      const session = await clerkClient.sessions.verifySession(sessionId, token);
+      
+      return {
+        isValid: true,
+        user: {
+          id: session.userId,
+          sub: session.userId
+        }
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Invalid token');
+    }
   }
 } 

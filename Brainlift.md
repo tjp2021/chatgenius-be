@@ -397,3 +397,85 @@ Learning Lessons [CG-20240109-002]
   5. Add proper logging for all real-time operations
 
 ==================================================================
+
+Problem Analysis [CG-20240110-001]
+- **ID**: CG-20240110-001
+- **Error Description**: WebSocket connections were failing with "No userId found in socket client" despite having valid auth tokens
+- **Root Cause Hypotheses**: 
+  1. Initial: Thought it was a guard not running (incorrect)
+  2. Then: Thought it was guard placement in decorators (incorrect)
+  3. Finally: Operation order was wrong - validation was happening before authentication
+- **Steps to Reproduce**:
+  1. Connect to WebSocket with valid Clerk token
+  2. Observe server logs showing "No userId found" despite successful connection
+  3. Notice frontend shows successful connection while backend shows auth failure
+- **Logs or Relevant Information**:
+  ```
+  Frontend:
+  Initializing socket with token: eyJhbG...
+  Socket connected successfully
+  Socket ID: l8mw0UL2xMplkxgKAAAD
+
+  Backend:
+  ❌ No userId found in socket client
+  ❌ Invalid client connection - no userId
+  ```
+
+Solution Walkthrough [CG-20240110-001]
+- **ID**: CG-20240110-001
+- **Solution Description**: Reordered the authentication flow to ensure proper sequencing
+- **Solution Attempts**:
+  1. First attempt: Tried moving `@UseGuards(WsGuard)` to individual methods
+  2. Second attempt: Tried handling auth directly in connection handler
+  3. Final solution: Fixed operation order in handleConnection and simplified validation flow
+- **Why It Worked**: 
+  - Previous implementations were checking for userId before it was set
+  - Final solution ensures authentication (which sets userId) happens before validation
+  - Removed redundant logging in helper methods to make the flow clearer
+- **Key Code Changes**:
+  ```typescript
+  async handleConnection(client: AuthenticatedSocket) {
+    // 1. First authenticate (this sets userId)
+    const isAuthenticated = await this.authenticateClient(client);
+    
+    // 2. Then validate (this checks userId exists)
+    if (!this.validateClient(client)) {
+      // Handle failure
+    }
+  }
+  ```
+
+Learning Lessons [CG-20240110-001]
+- **ID**: CG-20240110-001
+- **Pattern Recognition**: 
+  1. Operation order bugs are subtle - logs can show success and failure simultaneously
+  2. Authentication flows often have multiple steps that must happen in sequence
+  3. Helper methods should be pure and not handle side effects like logging
+- **Prevention Strategies**:
+  1. Always diagram authentication flows before implementing
+  2. Keep authentication steps clearly ordered and documented
+  3. Separate concerns: authentication, validation, and logging
+  4. Use TypeScript to enforce state requirements
+- **Best Practices Learned**:
+  1. Authentication should always happen first in connection lifecycle
+  2. Helper methods should be pure functions
+  3. Log at decision points, not in utility functions
+  4. Use clear, sequential naming for multi-step processes
+- **Future Recommendations**:
+  1. Create an Authentication Flow Checklist:
+     - [ ] Token verification
+     - [ ] User ID setting
+     - [ ] State validation
+     - [ ] Connection acceptance
+  2. Add comments indicating order requirements:
+     ```typescript
+     // 1. MUST happen first: Authenticate and set userId
+     await authenticateClient(client);
+     
+     // 2. MUST happen after auth: Validate state
+     validateClient(client);
+     ```
+  3. Consider creating a WebSocket connection state machine
+  4. Add integration tests that verify connection sequence
+
+==================================================================

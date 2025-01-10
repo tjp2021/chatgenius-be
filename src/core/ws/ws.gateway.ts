@@ -7,8 +7,9 @@ import {
 import { Server } from 'socket.io';
 import { EventService } from '../events/event.service';
 import { AuthenticatedSocket } from '../../shared/types/ws.types';
-import { Injectable } from '@nestjs/common';
+import { Injectable, UseGuards } from '@nestjs/common';
 import { BaseGateway } from './base.gateway';
+import { WsGuard } from '../../shared/guards/ws.guard';
 
 @Injectable()
 @WebSocketGateway({
@@ -17,6 +18,7 @@ import { BaseGateway } from './base.gateway';
     credentials: true,
   },
 })
+@UseGuards(WsGuard)
 export class WsGateway extends BaseGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   constructor(protected readonly eventService: EventService) {
     super(eventService);

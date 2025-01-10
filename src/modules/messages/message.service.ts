@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../../core/database/prisma.service';
 import { EventService } from '../../core/events/event.service';
 import { MessageDeliveryService } from './services/message-delivery.service';
+import { OfflineMessageService } from './services/offline-message.service';
 import { MessageDeliveryStatus, MessageDeliveryInfo } from './message.types';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class MessageService {
     private readonly prisma: PrismaService,
     private readonly eventService: EventService,
     private readonly deliveryService: MessageDeliveryService,
+    private readonly offlineMessageService: OfflineMessageService,
   ) {}
 
   async getUserChannels(userId: string) {
@@ -42,7 +44,14 @@ export class MessageService {
     // Get channel members for delivery tracking
     const channelMembers = await this.prisma.channelMember.findMany({
       where: { channelId: data.channelId },
-      select: { userId: true },
+      include: {
+        user: {
+          select: {
+            id: true,
+            isOnline: true,
+          },
+        },
+      },
     });
 
     // Create message
@@ -63,6 +72,17 @@ export class MessageService {
       .filter(id => id !== userId);
     
     await this.deliveryService.initializeDelivery(message.id, recipientIds);
+
+    // Queue message for offline users
+    const offlineMembers = channelMembers.filter(
+      member => member.userId !== userId && !member.user.isOnline
+    );
+
+    await Promise.all(
+      offlineMembers.map(member =>
+        this.offlineMessageService.queueMessageForOfflineUser(member.userId, message)
+      )
+    );
 
     // Emit message created event with delivery status
     await this.eventService.emitToChannel(data.channelId, 'message.created', {
@@ -203,5 +223,14 @@ export class MessageService {
       .filter(id => id !== message.userId);
 
     return this.deliveryService.getAllRecipientStatuses(messageId, recipientIds);
+  }
+
+  async handleUserOnline(userId: string): Promise<void> {
+    // Process any offline messages when user comes online
+    await this.offlineMessageService.processOfflineMessages(userId);
+  }
+
+  async getOfflineMessageCount(userId: string): Promise<number> {
+    return this.offlineMessageService.getOfflineMessageCount(userId);
   }
 } 

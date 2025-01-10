@@ -201,4 +201,33 @@ export class RedisCacheService implements OnModuleDestroy {
       status: result[1] as string | null,
     })) || [];
   }
+
+  // Pattern Matching Methods
+  async getKeysByPattern(pattern: string): Promise<string[]> {
+    if (!this.isEnabled) return [];
+    const keys = await this.redis?.keys(pattern);
+    return keys || [];
+  }
+
+  async scanKeys(pattern: string, count: number = 100): Promise<string[]> {
+    if (!this.isEnabled) return [];
+    
+    const keys: string[] = [];
+    let cursor = '0';
+    
+    do {
+      const [nextCursor, matchedKeys] = await this.redis?.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        count
+      ) || ['0', []];
+      
+      cursor = nextCursor;
+      keys.push(...matchedKeys);
+    } while (cursor !== '0');
+    
+    return keys;
+  }
 } 

@@ -3,17 +3,18 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { json } from 'express';
 import { IoAdapter } from '@nestjs/platform-socket.io';
+import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
   });
   
-  // Configure JSON parsing with raw body access
-  app.use(json({
-    verify: (req: any, _res, buf) => {
+  // Important: This needs to come before other middleware
+  app.use(bodyParser.json({
+    verify: (req: any, res, buf) => {
       req.rawBody = buf;
-    },
+    }
   }));
   
   // ******************** DO NOT FUCKING TOUCH THIS PORT ********************
@@ -24,23 +25,27 @@ async function bootstrap() {
   const PORT = 3001;
   
   // Configure CORS for both HTTP and WebSocket
-  const corsOrigins = process.env.FRONTEND_URL?.split(',') || [];
   app.enableCors({
-    origin: ['*', ...corsOrigins],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    origin: ['http://localhost:3000', 'https://localhost:3000'],
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Authorization',
       'Content-Type',
+      'Accept',
       'svix-id',
       'svix-timestamp',
-      'svix-signature'
+      'svix-signature',
+      'x-user-id',
+      'x-retry-count'
     ],
     exposedHeaders: [
       'svix-id',
       'svix-timestamp',
       'svix-signature'
     ],
+    credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204
   });
 
   // Configure WebSocket adapter

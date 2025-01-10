@@ -57,39 +57,53 @@ export class PrismaChannelRepository implements ChannelRepository {
   async findAll(userId: string, query: ChannelQuery): Promise<Channel[]> {
     const { type, search, cursor, limit = 20 } = query;
 
+    console.log('🔍 Finding channels for user:', { 
+      userId,
+      query,
+      timestamp: new Date().toISOString()
+    });
+
     return this.prisma.channel.findMany({
       where: {
         OR: [
-          // Public channels
           {
-            type: ChannelType.PUBLIC,
-            ...(search && {
-              name: { contains: search, mode: 'insensitive' },
-            }),
+            type: "PUBLIC",
+            members: {
+              none: {
+                userId: userId
+              }
+            }
           },
-          // Private channels where user is a member
           {
-            type: type || undefined,
             members: {
               some: {
-                userId,
-              },
-            },
-            ...(search && {
-              name: { contains: search, mode: 'insensitive' },
-            }),
-          },
+                userId: userId
+              }
+            }
+          }
         ],
+        ...(search && {
+          name: {
+            contains: search,
+            mode: 'insensitive'
+          }
+        }),
+        ...(type && { type })
       },
       take: limit,
-      ...(cursor && { skip: 1, cursor: { id: cursor } }),
+      ...(cursor && {
+        skip: 1,
+        cursor: {
+          id: cursor
+        }
+      }),
       orderBy: {
-        lastActivityAt: 'desc',
+        lastActivityAt: "desc"
       },
       include: {
         members: true,
-        createdBy: true,
-      },
+        createdBy: true
+      }
     });
   }
 

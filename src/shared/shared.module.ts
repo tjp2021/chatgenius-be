@@ -1,11 +1,10 @@
 import { Module, Global } from '@nestjs/common';
 import { ClerkGuard } from './guards/clerk.guard';
 import { WsGuard } from './guards/ws.guard';
-import { JwtGuard } from './guards/jwt.guard';
 import { RateLimitGuard } from './guards/rate-limit.guard';
 import { ThrottlerModule } from '@nestjs/throttler';
 
-const guards = [ClerkGuard, WsGuard, JwtGuard, RateLimitGuard];
+const guards = [ClerkGuard, WsGuard, RateLimitGuard];
 
 @Global()
 @Module({

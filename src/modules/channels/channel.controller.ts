@@ -56,6 +56,12 @@ export class ChannelController {
     @User('id') userId: string,
     @Query() query: ChannelQuery,
   ): Promise<Channel[]> {
+    console.log('🎯 Channel request received:', {
+      userId,
+      query,
+      timestamp: new Date().toISOString()
+    });
+    
     return this.channelService.getChannels(userId, query);
   }
 
