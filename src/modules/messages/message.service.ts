@@ -1,12 +1,15 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../core/database/prisma.service';
 import { EventService } from '../../core/events/event.service';
+import { MessageDeliveryService } from './services/message-delivery.service';
+import { MessageDeliveryStatus, MessageDeliveryInfo } from './message.types';
 
 @Injectable()
 export class MessageService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventService: EventService,
+    private readonly deliveryService: MessageDeliveryService,
   ) {}
 
   async getUserChannels(userId: string) {
@@ -36,6 +39,12 @@ export class MessageService {
       throw new ForbiddenException('Not a member of this channel');
     }
 
+    // Get channel members for delivery tracking
+    const channelMembers = await this.prisma.channelMember.findMany({
+      where: { channelId: data.channelId },
+      select: { userId: true },
+    });
+
     // Create message
     const message = await this.prisma.message.create({
       data: {
@@ -48,10 +57,23 @@ export class MessageService {
       },
     });
 
-    // Emit message created event
-    await this.eventService.emitToChannel(data.channelId, 'message.created', message);
+    // Initialize delivery tracking for all channel members except sender
+    const recipientIds = channelMembers
+      .map(m => m.userId)
+      .filter(id => id !== userId);
+    
+    await this.deliveryService.initializeDelivery(message.id, recipientIds);
 
-    return message;
+    // Emit message created event with delivery status
+    await this.eventService.emitToChannel(data.channelId, 'message.created', {
+      ...message,
+      deliveryStatus: MessageDeliveryStatus.SENT,
+    });
+
+    return {
+      ...message,
+      deliveryStatus: MessageDeliveryStatus.SENT,
+    };
   }
 
   async update(messageId: string, userId: string, content: string) {
@@ -114,5 +136,72 @@ export class MessageService {
       where: { id },
       include: { user: true },
     });
+  }
+
+  async markAsDelivered(messageId: string, recipientId: string) {
+    await this.deliveryService.updateDeliveryStatus(
+      messageId,
+      recipientId,
+      MessageDeliveryStatus.DELIVERED
+    );
+
+    const message = await this.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // Emit delivery status update
+    await this.eventService.emitToChannel(
+      message.channelId,
+      'message.delivered',
+      {
+        messageId,
+        recipientId,
+        timestamp: new Date(),
+      }
+    );
+  }
+
+  async markAsSeen(messageId: string, recipientId: string) {
+    await this.deliveryService.updateDeliveryStatus(
+      messageId,
+      recipientId,
+      MessageDeliveryStatus.SEEN
+    );
+
+    const message = await this.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // Emit seen status update
+    await this.eventService.emitToChannel(
+      message.channelId,
+      'message.seen',
+      {
+        messageId,
+        recipientId,
+        timestamp: new Date(),
+      }
+    );
+  }
+
+  async getMessageDeliveryStatus(messageId: string): Promise<MessageDeliveryInfo[]> {
+    const message = await this.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // Get all channel members except the sender
+    const channelMembers = await this.prisma.channelMember.findMany({
+      where: { channelId: message.channelId },
+      select: { userId: true },
+    });
+
+    const recipientIds = channelMembers
+      .map(m => m.userId)
+      .filter(id => id !== message.userId);
+
+    return this.deliveryService.getAllRecipientStatuses(messageId, recipientIds);
   }
 } 

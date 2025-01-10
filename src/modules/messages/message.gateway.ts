@@ -29,6 +29,51 @@ export class MessageGateway extends BaseGateway {
     }
   }
 
+  @SubscribeMessage('message:delivered')
+  async handleMessageDelivered(
+    client: AuthenticatedSocket,
+    @MessageBody() data: { messageId: string },
+  ) {
+    try {
+      await this.messageService.markAsDelivered(
+        data.messageId,
+        this.getClientUserId(client)
+      );
+      return this.success(true);
+    } catch (error) {
+      return this.error(error.message);
+    }
+  }
+
+  @SubscribeMessage('message:seen')
+  async handleMessageSeen(
+    client: AuthenticatedSocket,
+    @MessageBody() data: { messageId: string },
+  ) {
+    try {
+      await this.messageService.markAsSeen(
+        data.messageId,
+        this.getClientUserId(client)
+      );
+      return this.success(true);
+    } catch (error) {
+      return this.error(error.message);
+    }
+  }
+
+  @SubscribeMessage('message:getStatus')
+  async handleGetMessageStatus(
+    client: AuthenticatedSocket,
+    @MessageBody() data: { messageId: string },
+  ) {
+    try {
+      const status = await this.messageService.getMessageDeliveryStatus(data.messageId);
+      return this.success(status);
+    } catch (error) {
+      return this.error(error.message);
+    }
+  }
+
   @SubscribeMessage('updateMessage')
   async handleUpdateMessage(
     client: AuthenticatedSocket,

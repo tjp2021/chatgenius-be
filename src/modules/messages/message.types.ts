@@ -1,5 +1,27 @@
 import { Message } from '../../core/events/event.types';
 
+export enum MessageDeliveryStatus {
+  SENDING = 'SENDING',
+  SENT = 'SENT',         // Message reached server
+  DELIVERED = 'DELIVERED', // Message reached recipient
+  FAILED = 'FAILED',     // Delivery failed
+  SEEN = 'SEEN'          // Message was seen by recipient
+}
+
+export interface MessageDeliveryInfo {
+  messageId: string;
+  status: MessageDeliveryStatus;
+  recipientId: string;
+  timestamp: Date;
+  retryCount?: number;
+}
+
+export interface MessageWithDelivery extends Message {
+  deliveryStatus: MessageDeliveryStatus;
+  deliveredAt?: Date;
+  seenAt?: Date;
+}
+
 export interface CreateMessageDto {
   content: string;
   channelId: string;
