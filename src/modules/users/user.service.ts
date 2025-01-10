@@ -134,7 +134,12 @@ export class UserService {
     }
   }
 
-  async findById(id: string): Promise<User | null> {
+  async findById(id: string, clerkData?: { 
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    imageUrl?: string;
+  }): Promise<User | null> {
     try {
       this.logger.debug('Finding user by ID:', { id });
       
@@ -150,6 +155,27 @@ export class UserService {
         id,
         found: !!user
       });
+
+      // If user doesn't exist but has a valid Clerk ID format, create them with Clerk data
+      if (!user && id.startsWith('user_')) {
+        this.logger.debug('User not found but has valid Clerk ID, creating user with Clerk data:', { 
+          id,
+          hasClerkData: !!clerkData
+        });
+        
+        const firstName = clerkData?.firstName || '';
+        const lastName = clerkData?.lastName || '';
+        const name = firstName || lastName 
+          ? `${firstName} ${lastName}`.trim()
+          : clerkData?.email?.split('@')[0] || 'New User';
+
+        return this.createUser({
+          id,
+          email: clerkData?.email,
+          name,
+          imageUrl: clerkData?.imageUrl,
+        });
+      }
 
       if (!user) {
         throw new NotFoundException(`User with ID ${id} not found`);
@@ -169,6 +195,7 @@ export class UserService {
   async updateUser(id: string, data: { 
     name?: string; 
     imageUrl?: string;
+    email?: string;
   }): Promise<User> {
     try {
       this.logger.debug('Updating user:', { id, data });
@@ -178,6 +205,7 @@ export class UserService {
         data: {
           name: data.name,
           imageUrl: data.imageUrl,
+          email: data.email,
           updatedAt: new Date(),
         },
       });
@@ -185,6 +213,7 @@ export class UserService {
       this.logger.log('User updated successfully:', {
         id: user.id,
         name: user.name,
+        email: user.email,
         hasImage: !!user.imageUrl
       });
 

@@ -167,17 +167,22 @@ export class WebhookController {
           const lastName = userData.last_name || '';
           const name = firstName || lastName 
             ? `${firstName} ${lastName}`.trim()
-            : undefined;
+            : email?.split('@')[0] || undefined;
 
           const imageUrl = userData.image_url;
 
+          // Update all user information including email
           await this.userService.updateUser(userData.id, {
+            email,
             name,
             imageUrl,
           });
+
           this.logger.debug('User updated successfully', { 
             userId: userData.id,
+            email,
             name,
+            imageUrl: !!imageUrl
           });
           break;
         }

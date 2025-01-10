@@ -18,8 +18,9 @@ export class UserController {
     return this.userService.searchUsers(userId, query);
   }
 
-  @Post()
-  async createUser(
+  // Initialize/create the current user
+  @Post('me')
+  async initializeCurrentUser(
     @User('id') userId: string,
     @Body() data: { email: string; name: string; imageUrl?: string },
   ): Promise<UserType> {
@@ -29,13 +30,18 @@ export class UserController {
     });
   }
 
+  // Get the current user's profile
   @Get('me')
-  async getCurrentUser(@User('id') userId: string): Promise<UserType | null> {
+  async getCurrentUser(
+    @User('id') userId: string,
+  ): Promise<UserType | null> {
     return this.userService.findById(userId);
   }
 
   @Get(':id')
-  async getUser(@Param('id') id: string): Promise<UserType | null> {
+  async getUser(
+    @Param('id') id: string,
+  ): Promise<UserType | null> {
     return this.userService.findById(id);
   }
 
