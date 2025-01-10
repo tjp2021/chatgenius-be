@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { HealthCheck, HealthCheckService, HttpHealthIndicator } from '@nestjs/terminus';
 import { TokenBlacklistService } from './token-blacklist.service';
-import { Public } from '../decorators/public.decorator';
+import { Public } from '../shared/decorators/public.decorator';
 
 @Controller('health')
 export class HealthController {

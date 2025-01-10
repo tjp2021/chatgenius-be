@@ -1,39 +1,52 @@
 import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
-import { DraftService } from './draft.service';
+import { DraftService } from './services/draft.service';
 import { SaveDraftDto } from './dto/save-draft.dto';
-import { ClerkGuard } from '../auth/clerk.guard';
-import { UserId } from '../decorators/user-id.decorator';
+import { ClerkGuard } from '../../shared/guards/clerk.guard';
+import { UserId } from '../../shared/decorators/user-id.decorator';
+import { User } from '../../shared/decorators/user.decorator';
 
 @Controller('channels/:channelId/draft')
 @UseGuards(ClerkGuard)
 export class DraftController {
   constructor(private draftService: DraftService) {}
 
-  @Post()
+  @Post(':channelId')
   async saveDraft(
-    @UserId() userId: string,
+    @User() user: { id: string },
     @Param('channelId') channelId: string,
-    @Body() dto: SaveDraftDto,
+    @Body() dto: SaveDraftDto
   ) {
-    return this.draftService.saveDraft(userId, channelId, dto);
+    return this.draftService.saveDraft({
+      userId: user.id,
+      channelId,
+      deviceId: dto.deviceId,
+      content: dto.content
+    });
   }
 
-  @Get()
+  @Get(':channelId')
   async getDraft(
-    @UserId() userId: string,
+    @User() user: { id: string },
     @Param('channelId') channelId: string,
-    @Query('deviceId') deviceId?: string,
+    @Query('deviceId') deviceId?: string
   ) {
-    return this.draftService.getDraft(userId, channelId, deviceId);
+    return this.draftService.getDraft({
+      userId: user.id,
+      channelId,
+      deviceId: deviceId || ''
+    });
   }
 
-  @Delete()
+  @Delete(':channelId')
   async deleteDraft(
-    @UserId() userId: string,
+    @User() user: { id: string },
     @Param('channelId') channelId: string,
-    @Query('deviceId') deviceId?: string,
+    @Query('deviceId') deviceId?: string
   ) {
-    await this.draftService.deleteDraft(userId, channelId, deviceId);
-    return { success: true };
+    await this.draftService.deleteDraft({
+      userId: user.id,
+      channelId,
+      deviceId: deviceId || ''
+    });
   }
 } 

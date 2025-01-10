@@ -1,18 +1,14 @@
 import { Module } from '@nestjs/common';
-import { CoreModule } from '../../core/core.module';
-import { ChannelService } from './channel.service';
-import { ChannelGateway } from './channel.gateway';
-import { PrismaChannelRepository } from './channel.repository';
 import { ChannelController } from './channel.controller';
+import { ChannelService } from './channel.service';
+import { PrismaChannelRepository } from './channel.repository';
+import { CoreModule } from '../../core/core.module';
+import { ChannelInvitationModule } from './channel-invitation.module';
 
 @Module({
-  imports: [CoreModule],
-  providers: [
-    ChannelService,
-    ChannelGateway,
-    PrismaChannelRepository,
-  ],
+  imports: [CoreModule, ChannelInvitationModule],
   controllers: [ChannelController],
+  providers: [ChannelService, PrismaChannelRepository],
   exports: [ChannelService],
 })
 export class ChannelModule {} 

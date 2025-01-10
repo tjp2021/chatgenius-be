@@ -1,7 +1,7 @@
 import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
-import { ClerkGuard } from '../auth/clerk.guard';
-import { User } from '../decorators/user.decorator';
-import { ChannelInvitationService } from './channel-invitation.service';
+import { ClerkGuard } from '../../shared/guards/clerk.guard';
+import { User } from '../../shared/decorators/user.decorator';
+import { ChannelInvitationService } from './services/channel-invitation.service';
 import { 
   CreateChannelInvitationDto, 
   ChannelInvitationResponseDto,
@@ -20,7 +20,11 @@ export class ChannelInvitationController {
     @Param('channelId') channelId: string,
     @Body() dto: CreateChannelInvitationDto
   ): Promise<ChannelInvitationResponseDto> {
-    return this.invitationService.createInvitation(channelId, user.id, dto);
+    return this.invitationService.createInvitation({
+      channelId,
+      inviterId: user.id,
+      inviteeId: dto.inviteeId,
+    });
   }
 
   @Post('invitations/:invitationId/accept')
@@ -28,7 +32,7 @@ export class ChannelInvitationController {
     @User() user: { id: string },
     @Param('invitationId') invitationId: string,
   ): Promise<void> {
-    await this.invitationService.acceptInvitation(invitationId, user.id);
+    await this.invitationService.acceptInvitation(invitationId);
   }
 
   @Post('invitations/:invitationId/reject')
@@ -36,7 +40,7 @@ export class ChannelInvitationController {
     @User() user: { id: string },
     @Param('invitationId') invitationId: string,
   ): Promise<void> {
-    await this.invitationService.rejectInvitation(invitationId, user.id);
+    await this.invitationService.rejectInvitation(invitationId);
   }
 
   @Get('invitations/pending')

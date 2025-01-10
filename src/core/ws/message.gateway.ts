@@ -8,10 +8,10 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { MessageService } from '../message/message.service';
-import { MessageMapper } from '../message/mappers/message.mapper';
+import { MessageService } from '../../modules/messages/message.service';
+import { MessageMapper } from '../../modules/messages/mappers/message.mapper';
 import { UseGuards } from '@nestjs/common';
-import { WsGuard } from '../auth/ws.guard';
+import { WsGuard } from '../../shared/guards/ws.guard';
 
 @WebSocketGateway({
   cors: {

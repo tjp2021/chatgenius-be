@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Query, Param, UseGuards } from '@nestjs/common';
-import { ClerkGuard } from '../auth/clerk.guard';
-import { UserId } from '../decorators/user-id.decorator';
-import { BrowseService } from './browse.service';
+import { ClerkGuard } from '../../shared/guards/clerk.guard';
+import { UserId } from '../../shared/decorators/user-id.decorator';
+import { BrowseService } from './services/browse.service';
 import {
   PublicChannelsResponse,
   JoinedChannelsResponse,

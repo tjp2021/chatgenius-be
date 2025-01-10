@@ -1,8 +1,8 @@
 import { Controller, Get, Post, Body, Param, Delete, UseGuards } from '@nestjs/common';
 import { ChannelsService } from './channels.service';
 import { CreateChannelDto } from './dto/create-channel.dto';
-import { ClerkGuard } from '../auth/clerk.guard';
-import { User } from '../decorators/user.decorator';
+import { ClerkGuard } from '../../shared/guards/clerk.guard';
+import { User } from '../../shared/decorators/user.decorator';
 
 @Controller('channels')
 @UseGuards(ClerkGuard)

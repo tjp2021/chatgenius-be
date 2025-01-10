@@ -1,8 +1,8 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { NavigationService } from './navigation.service';
-import { ClerkGuard } from '../auth/clerk.guard';
-import { UserId } from '../decorators/user-id.decorator';
-import { NavigationState, TransitionResult } from './types';
+import { NavigationService } from './services/navigation.service';
+import { ClerkGuard } from '../../shared/guards/clerk.guard';
+import { UserId } from '../../shared/decorators/user-id.decorator';
+import { NavigationState, TransitionResult } from './types/navigation.types';
 
 @Controller('channels/navigation')
 @UseGuards(ClerkGuard)

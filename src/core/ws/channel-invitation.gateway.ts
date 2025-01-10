@@ -1,190 +1,152 @@
-import {
-  WebSocketGateway,
+import { 
+  WebSocketGateway, 
   WebSocketServer,
+  SubscribeMessage, 
+  MessageBody, 
+  ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
-  WsException,
 } from '@nestjs/websockets';
 import { Server } from 'socket.io';
-import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { ChannelInvitationService } from '../channels/channel-invitation.service';
-import { MemberRole } from '@prisma/client';
+import { Injectable, UseGuards, Logger } from '@nestjs/common';
+import { WsGuard } from '../../shared/guards/ws.guard';
+import { PrismaService } from '../database/prisma.service';
+import { ChannelInvitationService } from '../../modules/channels/services/channel-invitation.service';
+import { AuthenticatedSocket } from '../../shared/types/ws.types';
 
 @Injectable()
 @WebSocketGateway({
+  namespace: 'invitations',
   cors: {
-    origin: [process.env.FRONTEND_URL!, process.env.SOCKET_URL!],
-    credentials: true
+    origin: process.env.FRONTEND_URL,
+    credentials: true,
   },
 })
-export class ChannelInvitationGateway {
-  @WebSocketServer()
-  server: Server;
-
+@UseGuards(WsGuard)
+export class ChannelInvitationGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  @WebSocketServer() server: Server;
   private readonly logger = new Logger(ChannelInvitationGateway.name);
 
   constructor(
-    private prisma: PrismaService,
-    private invitationService: ChannelInvitationService,
+    private readonly prisma: PrismaService,
+    private readonly invitationService: ChannelInvitationService,
   ) {}
 
-  async emitInvitationReceived(
-    userId: string,
-    channelId: string,
-    inviterId: string,
-    role: MemberRole
-  ) {
+  async handleConnection(client: AuthenticatedSocket, ...args: any[]) {
     try {
-      const [channel, inviter] = await Promise.all([
-        this.prisma.channel.findUnique({
-          where: { id: channelId },
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            memberCount: true,
-          }
-        }),
-        this.prisma.user.findUnique({
-          where: { id: inviterId },
-          select: {
-            id: true,
-            name: true,
-            imageUrl: true,
-          }
-        })
-      ]);
-
-      if (!channel || !inviter) {
-        this.logger.error('Failed to emit invitation: channel or inviter not found');
-        return;
-      }
-
-      this.server.to(`user:${userId}`).emit('invitation:received', {
-        channel,
-        inviter,
-        role,
-        timestamp: new Date().toISOString()
+      this.logger.debug(`Client connected: ${client.id}`);
+      
+      // Get user's channels
+      const channels = await this.prisma.channelMember.findMany({
+        where: { userId: client.userId },
+        select: { channelId: true },
       });
+
+      // Subscribe to all channels
+      channels.forEach(({ channelId }) => {
+        client.join(`channel:${channelId}`);
+      });
+
+      return true;
     } catch (error) {
-      this.logger.error('Failed to emit invitation received:', error);
+      this.logger.error('Connection error:', error);
+      return false;
     }
   }
 
-  async emitInvitationAccepted(
-    channelId: string,
-    userId: string,
-  ) {
-    try {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          name: true,
-          imageUrl: true,
-        }
-      });
-
-      if (!user) {
-        this.logger.error('Failed to emit invitation accepted: user not found');
-        return;
-      }
-
-      // Emit to all channel members
-      this.server.to(`channel:${channelId}`).emit('invitation:accepted', {
-        channelId,
-        user,
-        timestamp: new Date().toISOString()
-      });
-
-      // Emit channel update to the new member
-      this.server.to(`user:${userId}`).emit('channel:joined', {
-        channelId,
-        timestamp: new Date().toISOString()
-      });
-    } catch (error) {
-      this.logger.error('Failed to emit invitation accepted:', error);
-    }
+  async handleDisconnect(client: AuthenticatedSocket) {
+    this.logger.debug(`Client disconnected: ${client.id}`);
   }
 
-  async emitInvitationRejected(
-    channelId: string,
-    userId: string,
+  @SubscribeMessage('invitation:send')
+  async handleSendInvitation(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { channelId: string; inviteeId: string },
   ) {
     try {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          name: true,
-        }
-      });
-
-      if (!user) {
-        this.logger.error('Failed to emit invitation rejected: user not found');
-        return;
-      }
-
-      // Only emit to channel admins and owners
-      const adminMembers = await this.prisma.channelMember.findMany({
+      // Check if user has permission to invite
+      const membership = await this.prisma.channelMember.findUnique({
         where: {
-          channelId,
-          role: {
-            in: [MemberRole.ADMIN, MemberRole.OWNER]
-          }
+          channelId_userId: {
+            channelId: data.channelId,
+            userId: client.userId,
+          },
         },
-        select: {
-          userId: true
-        }
       });
 
-      // Emit to each admin individually
-      adminMembers.forEach(member => {
-        this.server.to(`user:${member.userId}`).emit('invitation:rejected', {
-          channelId,
-          user,
-          timestamp: new Date().toISOString()
-        });
+      if (!membership || !['OWNER', 'ADMIN'].includes(membership.role)) {
+        throw new Error('No permission to invite users');
+      }
+
+      // Create invitation
+      const invitation = await this.invitationService.createInvitation({
+        channelId: data.channelId,
+        inviterId: client.userId,
+        inviteeId: data.inviteeId,
       });
+
+      // Notify invitee
+      this.server.to(`user:${data.inviteeId}`).emit('invitation:received', invitation);
+
+      return { success: true, invitation };
     } catch (error) {
-      this.logger.error('Failed to emit invitation rejected:', error);
+      this.logger.error('Error sending invitation:', error);
+      return { success: false, error: error.message };
     }
   }
 
-  async emitInvitationExpired(
-    channelId: string,
-    userId: string,
+  @SubscribeMessage('invitation:respond')
+  async handleInvitationResponse(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { invitationId: string; accept: boolean },
   ) {
     try {
-      // Notify the invited user
-      this.server.to(`user:${userId}`).emit('invitation:expired', {
-        channelId,
-        timestamp: new Date().toISOString()
+      // Get invitation
+      const invitation = await this.prisma.channelInvitation.findUnique({
+        where: { id: data.invitationId },
+        include: { channel: true },
       });
 
-      // Notify channel admins
-      const adminMembers = await this.prisma.channelMember.findMany({
-        where: {
-          channelId,
-          role: {
-            in: [MemberRole.ADMIN, MemberRole.OWNER]
-          }
-        },
-        select: {
-          userId: true
-        }
-      });
+      if (!invitation || invitation.inviteeId !== client.userId) {
+        throw new Error('Invalid invitation');
+      }
 
-      adminMembers.forEach(member => {
-        this.server.to(`user:${member.userId}`).emit('invitation:expired', {
-          channelId,
-          userId,
-          timestamp: new Date().toISOString()
+      if (data.accept) {
+        // Accept invitation
+        await this.invitationService.acceptInvitation(data.invitationId);
+
+        // Add member to channel
+        await this.prisma.channelMember.create({
+          data: {
+            channelId: invitation.channelId,
+            userId: client.userId,
+            role: 'MEMBER',
+          },
         });
+
+        // Subscribe to channel
+        client.join(`channel:${invitation.channelId}`);
+
+        // Notify channel members
+        this.server.to(`channel:${invitation.channelId}`).emit('member:joined', {
+          channelId: invitation.channelId,
+          userId: client.userId,
+        });
+      } else {
+        // Reject invitation
+        await this.invitationService.rejectInvitation(data.invitationId);
+      }
+
+      // Notify inviter
+      this.server.to(`user:${invitation.inviterId}`).emit('invitation:response', {
+        invitationId: data.invitationId,
+        accepted: data.accept,
       });
+
+      return { success: true };
     } catch (error) {
-      this.logger.error('Failed to emit invitation expired:', error);
+      this.logger.error('Error handling invitation response:', error);
+      return { success: false, error: error.message };
     }
   }
 } 

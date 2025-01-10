@@ -8,22 +8,20 @@ import {
   MessageDeliveryStatus,
 } from '@prisma/client';
 
-// Base event types
-export type EventType = 
-  | MessageEventType
-  | ChannelEventType
-  | PresenceEventType
-  | UserEventType;
+// Re-export Prisma types
+export type User = PrismaUser;
+export type Channel = PrismaChannel;
+export type ChannelMember = PrismaChannelMember;
+export type Message = PrismaMessage;
 
-// Message events
-export type MessageEventType =
+// Event Types
+export type MessageEventType = 
   | 'message.created'
   | 'message.updated'
   | 'message.deleted'
   | 'message.reaction_added'
   | 'message.reaction_removed';
 
-// Channel events
 export type ChannelEventType =
   | 'channel.created'
   | 'channel.updated'
@@ -32,13 +30,11 @@ export type ChannelEventType =
   | 'channel.member_left'
   | 'channel.typing';
 
-// Presence events
 export type PresenceEventType =
   | 'presence.online'
   | 'presence.offline'
   | 'presence.away';
 
-// User events
 export type UserEventType =
   | 'user.created'
   | 'user.updated'
@@ -46,24 +42,14 @@ export type UserEventType =
   | 'user.typing'
   | 'user.status_changed';
 
+// Base event types
+export type EventType = 
+  | MessageEventType
+  | ChannelEventType
+  | PresenceEventType
+  | UserEventType;
+
 // Event payloads
-export type Message = PrismaMessage & {
-  user?: User;
-  channel?: Channel;
-};
-
-export type Channel = PrismaChannel & {
-  members?: ChannelMember[];
-  createdBy?: User;
-};
-
-export type ChannelMember = PrismaChannelMember & {
-  user?: User;
-  channel?: Channel;
-};
-
-export type User = PrismaUser;
-
 export interface TypingIndicator {
   userId: string;
   channelId: string;

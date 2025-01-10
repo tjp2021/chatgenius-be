@@ -3,8 +3,11 @@ import { ConfigModule } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { PrismaService } from './database/prisma.service';
 import { EventService } from './events/event.service';
-import { WebSocketGateway } from './ws/ws.gateway';
+import { WsGateway } from './ws/ws.gateway';
 import { SharedModule } from '../shared/shared.module';
+
+const services = [PrismaService, EventService];
+const gateways = [WsGateway];
 
 @Module({
   imports: [
@@ -18,16 +21,7 @@ import { SharedModule } from '../shared/shared.module';
     }),
     SharedModule,
   ],
-  providers: [
-    PrismaService,
-    EventService,
-    WebSocketGateway,
-  ],
-  exports: [
-    PrismaService,
-    EventService,
-    WebSocketGateway,
-    CacheModule,
-  ],
+  providers: [...services, ...gateways],
+  exports: [...services, ...gateways, CacheModule],
 })
 export class CoreModule {} 

@@ -1,4 +1,33 @@
-import { Channel, ChannelType, MemberRole } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+
+export type PrismaTypes = Awaited<ReturnType<PrismaClient['$connect']>>;
+
+export interface DMTypingStatus {
+  userId: string;
+  channelId: string;
+  timestamp: Date;
+  isTyping: boolean;
+}
+
+export interface DMChannelActivity {
+  channelId: string;
+  lastActivity: Date;
+  memberCount: number;
+}
+
+export interface DMChannelNavigation {
+  userId: string;
+  channelId: string;
+  viewedAt: Date;
+  order: number;
+}
+
+export interface DMChannelDraft {
+  userId: string;
+  channelId: string;
+  content: string;
+  updatedAt: Date;
+}
 
 export interface DMParticipantStatus {
   participants: {
@@ -8,80 +37,65 @@ export interface DMParticipantStatus {
   }[];
 }
 
-export interface DMTypingStatus {
-  channelId: string;
-  userId: string;
-  isTyping: boolean;
-  timestamp: Date;
-}
-
 export interface DMTypingEvent {
+  userId: string;
   channelId: string;
-  user: {
-    id: string;
-    name: string | null;
-  };
   isTyping: boolean;
-}
-
-export interface DMUser {
-  id: string;
-  name: string | null;
-  imageUrl: string | null;
-  isOnline: boolean;
-  lastSeen: Date | null;
-}
-
-export interface DMMessage {
-  id: string;
-  content: string;
-  createdAt: Date;
-  user: {
-    id: string;
-    name: string | null;
-    imageUrl: string | null;
-  };
-}
-
-export interface DMThreadMessage extends DMMessage {
-  parentId: string;
-  replyCount: number;
-}
-
-export interface DMThread {
-  parentMessage: DMMessage;
-  replies: DMThreadMessage[];
-  participantCount: number;
-  lastReplyAt: Date | null;
-}
-
-export interface EnrichedDMChannel extends Channel {
-  members: {
-    userId: string;
-    role: MemberRole;
-    user: DMUser;
-  }[];
-  lastMessage: DMMessage | null;
-  participants: {
-    userId: string;
-    isOnline: boolean;
-    lastSeen: Date | null;
-  }[];
 }
 
 export interface DMReadReceipt {
-  messageId: string;
-  channelId: string;
   userId: string;
+  messageId: string;
   readAt: Date;
 }
 
 export interface DMReadReceiptEvent {
+  userId: string;
   channelId: string;
   messageId: string;
-  user: {
-    id: string;
-    name: string | null;
-  };
   readAt: Date;
+}
+
+export interface DMThread {
+  id: string;
+  channelId: string;
+  parentMessageId: string;
+  messages: DMThreadMessage[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface DMThreadMessage {
+  id: string;
+  content: string;
+  threadId: string;
+  userId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  thread: DMThread;
+}
+
+export interface EnrichedDMChannel {
+  id: string;
+  name: string;
+  type: 'DM';
+  createdAt: Date;
+  updatedAt: Date;
+  unreadCount: number;
+  lastMessage: {
+    id: string;
+    content: string;
+    createdAt: Date;
+    user: {
+      id: string;
+      name: string | null;
+      imageUrl: string | null;
+    };
+  } | null;
+  participants: {
+    id: string;
+    name: string;
+    imageUrl: string | null;
+    status: 'online' | 'offline' | 'away';
+  }[];
 } 

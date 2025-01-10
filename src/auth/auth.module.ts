@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { WebhookController } from './webhook.controller';
-import { UserModule } from '../user/user.module';
+import { UserModule } from '../modules/users/user.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { RateLimitGuard } from './rate-limit.guard';
 import { TokenBlacklistService } from './token-blacklist.service';

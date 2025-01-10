@@ -1,5 +1,5 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
-import { UserService } from '../user/user.service';
+import { UserService } from '../modules/users/user.service';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { JwtPayload, ValidatedUser, TokenValidationResponse } from './types/auth.types';
 import * as jwt from 'jsonwebtoken';

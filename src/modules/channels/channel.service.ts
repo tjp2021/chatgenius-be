@@ -27,7 +27,7 @@ export class ChannelService {
     }
 
     const member = await this.repository.findMember(channelId, userId);
-    if (!member || member.role !== MemberRole.OWNER) {
+    if (!member || member.role !== 'OWNER') {
       throw new ForbiddenException('Only channel owner can update the channel');
     }
 
@@ -46,7 +46,7 @@ export class ChannelService {
     }
 
     const member = await this.repository.findMember(channelId, userId);
-    if (!member || member.role !== MemberRole.OWNER) {
+    if (!member || member.role !== 'OWNER') {
       throw new ForbiddenException('Only channel owner can delete the channel');
     }
 
@@ -71,7 +71,7 @@ export class ChannelService {
       throw new ForbiddenException('Already a member of this channel');
     }
 
-    const newMember = await this.repository.addMember(channelId, userId, MemberRole.MEMBER);
+    const newMember = await this.repository.addMember(channelId, userId, 'MEMBER');
     
     // Emit member joined event
     this.events.emit(channelId, 'channel.member_joined', {
@@ -96,7 +96,7 @@ export class ChannelService {
       throw new NotFoundException('Not a member of this channel');
     }
 
-    if (member.role === MemberRole.OWNER) {
+    if (member.role === 'OWNER') {
       throw new ForbiddenException('Channel owner cannot leave the channel');
     }
 

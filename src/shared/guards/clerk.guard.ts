@@ -1,41 +1,37 @@
-import { Injectable, CanActivate, ExecutionContext, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { createClerkClient } from '@clerk/clerk-sdk-node';
 
 @Injectable()
 export class ClerkGuard implements CanActivate {
-  private readonly logger = new Logger(ClerkGuard.name);
-  private clerk = createClerkClient({ 
-    secretKey: process.env.CLERK_SECRET_KEY 
-  });
+  private clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers.authorization;
+    const sessionToken = request.headers.authorization?.split(' ')[1];
 
-    if (!authHeader) {
-      throw new UnauthorizedException('No authorization token provided');
-    }
-
-    const token = authHeader?.split(' ')[1];
-
-    if (!token) {
-      throw new UnauthorizedException('Invalid authorization header format');
+    if (!sessionToken) {
+      return false;
     }
 
     try {
-      const claims = await this.clerk.verifyToken(token);
+      // Extract session ID from the JWT
+      const [header, payload] = sessionToken.split('.');
+      const decodedPayload = JSON.parse(Buffer.from(payload, 'base64').toString());
+      const sessionId = decodedPayload.sid;
+
+      // Verify the session with both sessionId and token
+      const session = await this.clerk.sessions.verifySession(sessionId, sessionToken);
       
-      request.user = {
-        id: claims.sub,
-      };
-      
+      if (!session || !session.userId) {
+        return false;
+      }
+
+      // Attach the user ID to the request
+      request.userId = session.userId;
       return true;
     } catch (error) {
-      this.logger.error('Authentication failed:', {
-        error: error.message,
-        name: error.name
-      });
-      throw new UnauthorizedException('Invalid token');
+      console.error('Session verification failed:', error);
+      return false;
     }
   }
 } 

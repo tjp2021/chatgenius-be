@@ -1,103 +1,88 @@
 import { Injectable } from '@nestjs/common';
-import { WebSocketServer } from '@nestjs/websockets';
 import { Server } from 'socket.io';
-import { EventType, EventData } from './event.types';
 
 @Injectable()
 export class EventService {
-  @WebSocketServer()
   private server: Server;
+  private subscriptions: Map<string, Set<string>> = new Map(); // channelId -> Set of clientIds
+  private userChannels: Map<string, Set<string>> = new Map(); // userId -> Set of channelIds
 
-  private channelSubscriptions: Map<string, Set<string>> = new Map();
-  private userSockets: Map<string, Set<string>> = new Map();
-
-  // Emit an event to all clients in a channel
-  emit<T extends EventType>(
-    channelId: string,
-    event: T,
-    data: EventData[T],
-  ): void {
-    if (!this.channelSubscriptions.has(channelId)) return;
-    
-    const socketIds = this.channelSubscriptions.get(channelId);
-    if (!socketIds) return;
-
-    socketIds.forEach(socketId => {
-      this.server.to(socketId).emit(event, data);
-    });
+  setServer(server: Server) {
+    this.server = server;
   }
 
-  // Subscribe a socket to a channel
-  subscribe(channelId: string, socketId: string, userId: string): void {
+  // Core emit methods
+  emit(channelId: string, event: string, data: any) {
+    this.server.to(`channel:${channelId}`).emit(event, data);
+  }
+
+  emitToChannel(channelId: string, event: string, data: any) {
+    this.server.to(`channel:${channelId}`).emit(event, data);
+  }
+
+  emitToUser(userId: string, event: string, data: any) {
+    this.server.to(`user:${userId}`).emit(event, data);
+  }
+
+  emitToAll(event: string, data: any) {
+    this.server.emit(event, data);
+  }
+
+  // Subscription management
+  subscribe(channelId: string, clientId: string, userId: string) {
     // Add to channel subscriptions
-    if (!this.channelSubscriptions.has(channelId)) {
-      this.channelSubscriptions.set(channelId, new Set());
+    if (!this.subscriptions.has(channelId)) {
+      this.subscriptions.set(channelId, new Set());
     }
-    this.channelSubscriptions.get(channelId)?.add(socketId);
+    this.subscriptions.get(channelId)!.add(clientId);
 
-    // Add to user socket mapping
-    if (!this.userSockets.has(userId)) {
-      this.userSockets.set(userId, new Set());
+    // Add to user's channel list
+    if (!this.userChannels.has(userId)) {
+      this.userChannels.set(userId, new Set());
     }
-    this.userSockets.get(userId)?.add(socketId);
+    this.userChannels.get(userId)!.add(channelId);
   }
 
-  // Unsubscribe a socket from a channel
-  unsubscribe(channelId: string, socketId: string, userId: string): void {
+  unsubscribe(channelId: string, clientId: string, userId: string) {
     // Remove from channel subscriptions
-    this.channelSubscriptions.get(channelId)?.delete(socketId);
-    if (this.channelSubscriptions.get(channelId)?.size === 0) {
-      this.channelSubscriptions.delete(channelId);
+    const channelSubs = this.subscriptions.get(channelId);
+    if (channelSubs) {
+      channelSubs.delete(clientId);
+      if (channelSubs.size === 0) {
+        this.subscriptions.delete(channelId);
+      }
     }
 
-    // Remove from user socket mapping
-    this.userSockets.get(userId)?.delete(socketId);
-    if (this.userSockets.get(userId)?.size === 0) {
-      this.userSockets.delete(userId);
+    // Remove from user's channel list
+    const userChans = this.userChannels.get(userId);
+    if (userChans) {
+      userChans.delete(channelId);
+      if (userChans.size === 0) {
+        this.userChannels.delete(userId);
+      }
     }
   }
 
-  // Emit an event to all sockets of a specific user
-  emitToUser<T extends EventType>(
-    userId: string,
-    event: T,
-    data: EventData[T],
-  ): void {
-    const socketIds = this.userSockets.get(userId);
-    if (!socketIds) return;
-
-    socketIds.forEach(socketId => {
-      this.server.to(socketId).emit(event, data);
-    });
-  }
-
-  // Get all socket IDs for a user
-  getUserSockets(userId: string): Set<string> | undefined {
-    return this.userSockets.get(userId);
-  }
-
-  // Check if a user is subscribed to a channel
   isSubscribed(channelId: string, userId: string): boolean {
-    const userSockets = this.userSockets.get(userId);
-    if (!userSockets) return false;
-
-    const channelSockets = this.channelSubscriptions.get(channelId);
-    if (!channelSockets) return false;
-
-    return Array.from(userSockets).some(socketId => 
-      channelSockets.has(socketId)
-    );
+    const userChans = this.userChannels.get(userId);
+    return userChans ? userChans.has(channelId) : false;
   }
 
-  // Get all channels a user is subscribed to
   getUserChannels(userId: string): string[] {
-    const userSockets = this.userSockets.get(userId);
-    if (!userSockets) return [];
+    const channels = this.userChannels.get(userId);
+    return channels ? Array.from(channels) : [];
+  }
 
-    return Array.from(this.channelSubscriptions.entries())
-      .filter(([_, sockets]) => 
-        Array.from(userSockets).some(socketId => sockets.has(socketId))
-      )
-      .map(([channelId]) => channelId);
+  // Legacy support - these will be deprecated
+  broadcastToUser(userId: string, event: string, data: any) {
+    this.emitToUser(userId, event, data);
+  }
+
+  broadcastToChannel(channelId: string, event: string, data: any) {
+    this.emitToChannel(channelId, event, data);
+  }
+
+  broadcastToAll(event: string, data: any) {
+    this.emitToAll(event, data);
   }
 } 

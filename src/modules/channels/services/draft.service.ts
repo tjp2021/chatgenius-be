@@ -1,80 +1,48 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { SaveDraftDto } from './dto/save-draft.dto';
-import type { ChannelDraft } from '@prisma/client';
+import { PrismaService } from '../../../core/database/prisma.service';
+import { SaveDraftDto } from '../dto/save-draft.dto';
 
 @Injectable()
 export class DraftService {
   constructor(private prisma: PrismaService) {}
 
-  async saveDraft(
-    userId: string,
-    channelId: string,
-    data: SaveDraftDto
-  ): Promise<ChannelDraft> {
-    // First verify user has access to the channel
-    const membership = await this.prisma.channelMember.findUnique({
-      where: {
-        channelId_userId: {
-          channelId,
-          userId,
-        },
-      },
-    });
-
-    if (!membership) {
-      throw new NotFoundException('Channel not found or not a member');
-    }
-
-    // Upsert the draft
+  async saveDraft(data: { userId: string; channelId: string; deviceId: string; content: string }) {
     return this.prisma.channelDraft.upsert({
       where: {
-        userId_channelId_deviceId: {
-          userId,
-          channelId,
-          deviceId: data.deviceId || null,
-        },
-      },
-      create: {
-        userId,
-        channelId,
-        content: data.content,
-        deviceId: data.deviceId,
+        channelId_userId: {
+          userId: data.userId,
+          channelId: data.channelId,
+        }
       },
       update: {
         content: data.content,
       },
-    });
-  }
-
-  async getDraft(
-    userId: string,
-    channelId: string,
-    deviceId?: string
-  ): Promise<ChannelDraft | null> {
-    return this.prisma.channelDraft.findUnique({
-      where: {
-        userId_channelId_deviceId: {
-          userId,
-          channelId,
-          deviceId: deviceId || null,
-        },
+      create: {
+        user: { connect: { id: data.userId } },
+        channel: { connect: { id: data.channelId } },
+        content: data.content,
       },
     });
   }
 
-  async deleteDraft(
-    userId: string,
-    channelId: string,
-    deviceId?: string
-  ): Promise<void> {
-    await this.prisma.channelDraft.delete({
+  async getDraft(data: { userId: string; channelId: string; deviceId: string }) {
+    return this.prisma.channelDraft.findUnique({
       where: {
-        userId_channelId_deviceId: {
-          userId,
-          channelId,
-          deviceId: deviceId || null,
-        },
+        channelId_userId: {
+          userId: data.userId,
+          channelId: data.channelId,
+        }
+      },
+    });
+  }
+
+  async deleteDraft(data: { userId: string; channelId: string; deviceId: string }) {
+    return this.prisma.channelDraft.delete({
+      where: {
+        channelId_userId: {
+          userId: data.userId,
+          channelId: data.channelId,
+        }
       },
     });
   }

@@ -1,16 +1,7 @@
-import { Channel } from '../../core/events/event.types';
+import { Channel, ChannelMember } from '../../core/events/event.types';
 
-export enum ChannelType {
-  PUBLIC = 'PUBLIC',
-  PRIVATE = 'PRIVATE',
-  DM = 'DM'
-}
-
-export enum MemberRole {
-  OWNER = 'OWNER',
-  ADMIN = 'ADMIN',
-  MEMBER = 'MEMBER'
-}
+export type ChannelType = 'PUBLIC' | 'PRIVATE' | 'DM';
+export type MemberRole = 'OWNER' | 'ADMIN' | 'MEMBER';
 
 export interface CreateChannelDto {
   name: string;
@@ -19,20 +10,13 @@ export interface CreateChannelDto {
 }
 
 export interface UpdateChannelDto {
+  channelId: string;
   name?: string;
   description?: string;
   type?: ChannelType;
-}
-
-export interface ChannelMember {
-  userId: string;
-  channelId: string;
-  role: MemberRole;
-  joinedAt: Date;
-  user?: {
-    id: string;
-    name?: string;
-    imageUrl?: string;
+  memberRole?: {
+    userId: string;
+    role: MemberRole;
   };
 }
 

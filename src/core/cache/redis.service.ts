@@ -1,8 +1,8 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
-import { Channel, ChannelMember, User, Message } from '@prisma/client';
-import { DMTypingStatus } from '../channels/types/dm.types';
+import { Channel, ChannelMember, User, Message } from '../events/event.types';
+import { DMTypingStatus } from '../types/dm.types';
 
 @Injectable()
 export class RedisCacheService implements OnModuleDestroy {

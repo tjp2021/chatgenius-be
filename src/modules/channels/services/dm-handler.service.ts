@@ -1,19 +1,20 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { RedisCacheService } from '../cache/redis.service';
-import { Channel, ChannelType, MemberRole, Prisma } from '@prisma/client';
-import { CreateChannelDto } from './dto/create-channel.dto';
-import { NetworkConnectivityException } from './errors';
-import { 
-  DMParticipantStatus, 
-  EnrichedDMChannel, 
-  DMTypingStatus, 
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../../../core/database/prisma.service';
+import { RedisCacheService } from '../../../core/cache/redis.service';
+import { EventService } from '../../../core/events/event.service';
+import { CreateChannelDto } from '../dto/create-channel.dto';
+import { NetworkConnectivityException } from '../errors/network-connectivity.exception';
+import { Prisma } from '@prisma/client';
+import {
+  DMTypingStatus,
   DMTypingEvent,
   DMReadReceipt,
   DMReadReceiptEvent,
   DMThread,
-  DMThreadMessage
-} from './types/dm.types';
+  DMThreadMessage,
+  EnrichedDMChannel,
+  DMParticipantStatus
+} from '../types/dm.types';
 
 @Injectable()
 export class DMHandlerService {
@@ -65,7 +66,7 @@ export class DMHandlerService {
 
     const channel = await this.prisma.channel.findFirst({
       where: {
-        type: ChannelType.DM,
+        type: 'DM',
         AND: [
           {
             members: {
@@ -130,17 +131,17 @@ export class DMHandlerService {
       const channel = await this.prisma.channel.create({
         data: {
           name: dmName,
-          type: ChannelType.DM,
+          type: 'DM',
           createdById: userId,
           members: {
             create: [
               {
                 userId: userId,
-                role: MemberRole.MEMBER,
+                role: 'MEMBER',
               },
               {
                 userId: dto.targetUserId,
-                role: MemberRole.MEMBER,
+                role: 'MEMBER',
               }
             ],
           },
@@ -163,7 +164,7 @@ export class DMHandlerService {
       return this.enrichDMData(channel);
     } catch (error) {
       this.logger.error('Failed to create DM channel:', error);
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error instanceof Error && error.name === 'PrismaClientKnownRequestError') {
         throw new NetworkConnectivityException();
       }
       throw error;
@@ -188,7 +189,7 @@ export class DMHandlerService {
       }
     });
 
-    if (!channel || channel.type !== ChannelType.DM) {
+    if (!channel || channel.type !== 'DM') {
       throw new NotFoundException('DM channel not found');
     }
 
@@ -201,9 +202,9 @@ export class DMHandlerService {
     };
   }
 
-  async enrichDMData(channel: Channel): Promise<EnrichedDMChannel> {
+  async enrichDMData(channelData: any): Promise<EnrichedDMChannel> {
     const channelWithMembers = await this.prisma.channel.findUnique({
-      where: { id: channel.id },
+      where: { id: channelData.id },
       include: {
         members: {
           include: {
@@ -227,7 +228,7 @@ export class DMHandlerService {
 
     const [lastMessage, participantStatus] = await Promise.all([
       this.prisma.message.findFirst({
-        where: { channelId: channel.id },
+        where: { channelId: channelData.id },
         orderBy: { createdAt: 'desc' },
         include: {
           user: {
@@ -239,30 +240,29 @@ export class DMHandlerService {
           }
         }
       }),
-      this.getDMParticipantStatus(channel.id)
+      this.getDMParticipantStatus(channelData.id)
     ]);
 
     // Map the data to match our types
     const enrichedChannel: EnrichedDMChannel = {
-      ...channelWithMembers,
-      members: channelWithMembers.members.map(member => ({
-        userId: member.userId,
-        role: member.role,
-        user: {
-          id: member.user.id,
-          name: member.user.name,
-          imageUrl: member.user.imageUrl,
-          isOnline: member.user.isOnline,
-          lastSeen: member.user.updatedAt
-        }
-      })),
+      id: channelWithMembers.id,
+      name: channelWithMembers.name,
+      type: 'DM',
+      createdAt: channelWithMembers.createdAt,
+      updatedAt: channelWithMembers.updatedAt,
+      unreadCount: 0, // This should be calculated based on read receipts
       lastMessage: lastMessage ? {
         id: lastMessage.id,
         content: lastMessage.content,
         createdAt: lastMessage.createdAt,
         user: lastMessage.user
       } : null,
-      participants: participantStatus.participants
+      participants: participantStatus.participants.map(p => ({
+        id: p.userId,
+        name: p.userId,
+        imageUrl: null,
+        status: p.isOnline ? 'online' : 'offline'
+      })),
     };
 
     return enrichedChannel;
@@ -271,7 +271,7 @@ export class DMHandlerService {
   async getDMChannels(userId: string): Promise<EnrichedDMChannel[]> {
     const channels = await this.prisma.channel.findMany({
       where: {
-        type: ChannelType.DM,
+        type: 'DM',
         members: {
           some: {
             userId
@@ -325,7 +325,7 @@ export class DMHandlerService {
       }
     });
 
-    if (!channel || channel.type !== ChannelType.DM) {
+    if (!channel || channel.type !== 'DM') {
       throw new NotFoundException('DM channel not found');
     }
 
@@ -333,28 +333,25 @@ export class DMHandlerService {
       throw new BadRequestException('Not a member of this DM');
     }
 
-    const typingStatus: DMTypingStatus = {
-      channelId,
+    const typingEvent: DMTypingEvent = {
       userId,
-      isTyping,
-      timestamp: new Date()
+      channelId,
+      isTyping
     };
 
     // Store typing status in cache with expiration
     if (isTyping) {
-      await this.cacheService.setTypingStatus(channelId, typingStatus);
+      await this.cacheService.setTypingStatus(channelId, {
+        userId,
+        channelId,
+        isTyping,
+        timestamp: new Date()
+      });
     } else {
       await this.cacheService.invalidateTypingStatus(channelId);
     }
 
-    return {
-      channelId,
-      user: {
-        id: channel.members[0].user.id,
-        name: channel.members[0].user.name,
-      },
-      isTyping
-    };
+    return typingEvent;
   }
 
   async getTypingStatus(channelId: string): Promise<DMTypingStatus | null> {
@@ -382,18 +379,13 @@ export class DMHandlerService {
         members: {
           where: { userId },
           include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-              }
-            }
+            user: true
           }
         }
       }
     });
 
-    if (!channel || channel.type !== ChannelType.DM) {
+    if (!channel || channel.type !== 'DM') {
       throw new NotFoundException('DM channel not found');
     }
 
@@ -423,17 +415,14 @@ export class DMHandlerService {
       }
     });
 
-    const readReceipt: DMReadReceiptEvent = {
+    const readReceiptEvent: DMReadReceiptEvent = {
+      userId,
       channelId,
       messageId,
-      user: {
-        id: channel.members[0].user.id,
-        name: channel.members[0].user.name,
-      },
       readAt: new Date()
     };
 
-    return readReceipt;
+    return readReceiptEvent;
   }
 
   async getReadReceipts(channelId: string, messageId: string): Promise<DMReadReceipt[]> {
@@ -452,7 +441,7 @@ export class DMHandlerService {
       }
     });
 
-    if (!message || message.channel.type !== ChannelType.DM) {
+    if (!message || message.channel.type !== 'DM') {
       throw new NotFoundException('Message not found in DM channel');
     }
 
@@ -491,7 +480,7 @@ export class DMHandlerService {
 
     const replies = await this.prisma.message.findMany({
       where: {
-        parentId: messageId,
+        replyToId: messageId,
         channelId
       },
       include: {
@@ -515,31 +504,31 @@ export class DMHandlerService {
 
     const lastReply = replies[replies.length - 1];
 
-    return {
-      parentMessage: {
-        id: parentMessage.id,
-        content: parentMessage.content,
-        createdAt: parentMessage.createdAt,
-        user: parentMessage.user
-      },
-      replies: replies.map(reply => ({
+    const thread: DMThread = {
+      id: messageId,
+      channelId,
+      parentMessageId: messageId,
+      messages: replies.map(reply => ({
         id: reply.id,
         content: reply.content,
+        threadId: messageId,
+        userId: reply.userId,
         createdAt: reply.createdAt,
-        user: reply.user,
-        parentId: reply.parentId!,
-        replyCount: 0 // Nested replies not supported yet
+        updatedAt: reply.updatedAt,
+        thread: null // Avoid circular reference
       })),
-      participantCount: participants.size,
-      lastReplyAt: lastReply?.createdAt || null
+      createdAt: parentMessage.createdAt,
+      updatedAt: new Date()
     };
+
+    return thread;
   }
 
   async getThreadedMessages(channelId: string): Promise<DMThreadMessage[]> {
     const messages = await this.prisma.message.findMany({
       where: {
         channelId,
-        parentId: { not: null }
+        replyToId: { not: null }
       },
       include: {
         user: {
@@ -562,11 +551,19 @@ export class DMHandlerService {
 
     return messages.map(msg => ({
       id: msg.id,
+      threadId: msg.channelId,
+      userId: msg.userId,
       content: msg.content,
       createdAt: msg.createdAt,
-      user: msg.user,
-      parentId: msg.parentId!,
-      replyCount: msg._count.replies
+      updatedAt: msg.updatedAt,
+      thread: {
+        id: msg.channelId,
+        channelId: msg.channelId,
+        parentMessageId: msg.replyToId || '',
+        messages: [],
+        createdAt: msg.createdAt,
+        updatedAt: msg.updatedAt
+      }
     }));
   }
 } 

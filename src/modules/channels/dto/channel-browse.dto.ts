@@ -1,26 +1,47 @@
-import { ChannelType, MemberRole } from '@prisma/client';
+import { ChannelType, MemberRole } from '../../../shared/types/prisma.types';
 
-export interface ChannelBrowseResponse {
-  id: string;
-  name: string;
-  description: string | null;
-  type: ChannelType;
-  _count: {
-    members: number;
-    messages: number;
-  };
-  createdAt: string;
-  isMember?: boolean;
-  joinedAt?: string;
-  isOwner?: boolean;
+export type ChannelSortBy = 'createdAt' | 'name' | 'memberCount' | 'messages' | 'joinedAt';
+export type SortOrder = 'asc' | 'desc';
+
+export class ChannelBrowseDto {
+  type?: ChannelType;
+  search?: string;
+  cursor?: string;
+  limit?: number;
+  sortBy?: ChannelSortBy;
+  sortOrder?: SortOrder;
 }
 
 export interface PublicChannelsResponse {
-  channels: ChannelBrowseResponse[];
+  channels: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    type: ChannelType;
+    _count: {
+      members: number;
+      messages: number;
+    };
+    createdAt: string;
+    isMember: boolean;
+    joinedAt: string | null;
+  }>;
 }
 
 export interface JoinedChannelsResponse {
-  channels: ChannelBrowseResponse[];
+  channels: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    type: ChannelType;
+    _count: {
+      members: number;
+      messages: number;
+    };
+    createdAt: string;
+    joinedAt: string;
+    isOwner: boolean;
+  }>;
 }
 
 export interface ChannelJoinResponse {
@@ -36,27 +57,22 @@ export interface ChannelLeaveResponse {
   success: boolean;
 }
 
-export interface ChannelMember {
-  userId: string;
-  role: MemberRole;
-  joinedAt: string;
-  user: {
-    id: string;
-    name: string | null;
-    imageUrl: string | null;
-    isOnline: boolean;
-  };
-}
-
 export interface ChannelMembersResponse {
-  members: ChannelMember[];
+  members: Array<{
+    userId: string;
+    role: MemberRole;
+    joinedAt: string;
+    user: {
+      id: string;
+      name: string;
+      imageUrl: string;
+      isOnline: boolean;
+    };
+  }>;
   _count: {
     total: number;
   };
 }
-
-export type ChannelSortBy = 'memberCount' | 'messages' | 'createdAt' | 'name' | 'joinedAt';
-export type SortOrder = 'asc' | 'desc';
 
 export interface BrowseOptions {
   search?: string;

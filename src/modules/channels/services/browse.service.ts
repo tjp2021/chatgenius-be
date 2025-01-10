@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { ChannelType, MemberRole, Prisma } from '@prisma/client';
-import { ChannelsService } from './channels.service';
-import { RedisCacheService } from '../cache/redis.service';
-import { NetworkConnectivityException } from './errors';
+import { PrismaService } from '../../../core/database/prisma.service';
+import { ChannelType, MemberRole } from '../../../shared/types/prisma.types';
+import { Prisma } from '@prisma/client';
+import { ChannelsService } from '../channels.service';
+import { RedisCacheService } from '../../../core/cache/redis.service';
+import { NetworkConnectivityException } from '../errors/network-connectivity.exception';
 import {
   PublicChannelsResponse,
   JoinedChannelsResponse,
@@ -13,7 +14,7 @@ import {
   BrowseOptions,
   ChannelSortBy,
   SortOrder
-} from './dto/channel-browse.dto';
+} from '../dto/channel-browse.dto';
 
 @Injectable()
 export class BrowseService {
