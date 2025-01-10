@@ -1,45 +1,26 @@
-import { Controller, Get, Post, Body, Param, Delete, UseGuards, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Param, Req, Logger } from '@nestjs/common';
 import { MessageService } from './message.service';
-import { CreateMessageDto } from './dto/create-message.dto';
-import { ClerkGuard } from '../../shared/guards/clerk.guard';
-import { User } from '../../shared/decorators/user.decorator';
-import { MessageMapper } from './mappers/message.mapper';
+import { Request } from 'express';
 
 @Controller('messages')
-@UseGuards(ClerkGuard)
 export class MessageController {
+  private readonly logger = new Logger(MessageController.name);
+
   constructor(private readonly messageService: MessageService) {}
 
-  @Post()
-  async create(@User() userId: string, @Body() dto: CreateMessageDto) {
-    const message = await this.messageService.create(userId, dto);
-    return MessageMapper.toResponse(message);
-  }
-
   @Get('channel/:channelId')
-  async findAll(@Param('channelId') channelId: string) {
-    const messages = await this.messageService.findAll(channelId);
-    return messages.map(message => MessageMapper.toResponse(message));
-  }
-
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    const message = await this.messageService.findById(id);
-    if (!message) {
-      throw new NotFoundException('Message not found');
-    }
-    return MessageMapper.toResponse(message);
-  }
-
-  @Delete(':id')
-  async delete(@User() userId: string, @Param('id') id: string) {
+  async getChannelMessages(@Param('channelId') channelId: string, @Req() request: Request) {
+    this.logger.debug(`Request headers: ${JSON.stringify(request.headers)}`);
+    this.logger.log(`Fetching messages for channel: ${channelId}`);
+    
     try {
-      await this.messageService.delete(id, userId);
+      const messages = await this.messageService.findByChannel(channelId);
+      this.logger.log(`Successfully retrieved ${messages.length} messages for channel ${channelId}`);
+      return messages;
     } catch (error) {
-      if (error.code === 'P2025') {
-        throw new NotFoundException('Message not found');
-      }
-      throw new ForbiddenException('Cannot delete message');
+      this.logger.error(`Error fetching messages for channel ${channelId}:`, error);
+      this.logger.error(`Stack trace:`, error.stack);
+      throw error;
     }
   }
 } 

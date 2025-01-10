@@ -124,6 +124,317 @@
   - [ ] Message batching
   - [ ] Cleanup routines
 
+### Message System Logging
+
+```typescript
+import { MessageEvent, MessageDeliveryStatus } from './message-events.enum';
+
+interface MessageState {
+  messages: Map<string, Message>;
+  pendingMessages: Map<string, Message>;
+  failedMessages: Map<string, { message: Message; retryCount: number }>;
+}
+
+const MAX_RETRIES = 3;
+const RETRY_DELAYS = [1000, 2000, 4000]; // Exponential backoff
+
+// Message State Management
+const messageState: MessageState = {
+  messages: new Map(),
+  pendingMessages: new Map(),
+  failedMessages: new Map()
+};
+
+// Socket Connection Logging with Recovery
+socket.on('connect', async () => {
+  console.log('[Socket] Connected successfully');
+  console.log('[Socket] Connection ID:', socket.id);
+  
+  // Recover any pending/failed messages
+  await recoverMessageState();
+});
+
+socket.on('disconnect', () => {
+  console.warn('[Socket] Disconnected');
+  // Move all pending messages to failed state
+  messageState.pendingMessages.forEach((message, id) => {
+    messageState.failedMessages.set(id, { message, retryCount: 0 });
+  });
+  messageState.pendingMessages.clear();
+});
+
+// Enhanced Message Sending with Optimistic Updates
+const sendMessage = async (channelId: string, content: string): Promise<Message> => {
+  console.log('[Message] Attempting to send message:', { channelId, content });
+  
+  // Create optimistic message
+  const optimisticMessage: Message = {
+    id: `temp-${Date.now()}`,
+    content,
+    channelId,
+    userId: currentUserId, // Assume this is available
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deliveryStatus: MessageDeliveryStatus.SENT,
+    user: currentUser // Assume this is available
+  };
+
+  // Add to pending messages
+  messageState.pendingMessages.set(optimisticMessage.id, optimisticMessage);
+  
+  // Optimistically update UI
+  updateUI(optimisticMessage);
+
+  try {
+    // Emit with timeout promise
+    const response = await Promise.race([
+      new Promise((resolve, reject) => {
+        socket.emit(MessageEvent.SEND, {
+          channelId,
+          content,
+        }, (response: SocketResponse<Message>) => {
+          if (response.success) {
+            resolve(response.data);
+          } else {
+            reject(new Error(response.error));
+          }
+        });
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Message send timeout')), 5000)
+      )
+    ]) as Message;
+
+    console.log('[Message] Send success:', response);
+    
+    // Remove from pending, add to messages
+    messageState.pendingMessages.delete(optimisticMessage.id);
+    messageState.messages.set(response.id, response);
+    
+    // Update UI with real message
+    updateUI(response, optimisticMessage.id);
+    
+    return response;
+  } catch (error) {
+    console.error('[Message] Send failed:', error);
+    
+    // Move to failed messages
+    messageState.pendingMessages.delete(optimisticMessage.id);
+    messageState.failedMessages.set(optimisticMessage.id, {
+      message: optimisticMessage,
+      retryCount: 0
+    });
+    
+    // Update UI to show failed state
+    updateUIError(optimisticMessage.id, error);
+    
+    // Attempt retry
+    await retryMessage(optimisticMessage);
+    
+    throw error;
+  }
+};
+
+// Message Retry Logic
+const retryMessage = async (message: Message) => {
+  const failed = messageState.failedMessages.get(message.id);
+  if (!failed || failed.retryCount >= MAX_RETRIES) return;
+
+  // Exponential backoff
+  await new Promise(resolve => 
+    setTimeout(resolve, RETRY_DELAYS[failed.retryCount])
+  );
+
+  try {
+    const response = await sendMessage(message.channelId, message.content);
+    messageState.failedMessages.delete(message.id);
+    return response;
+  } catch (error) {
+    messageState.failedMessages.set(message.id, {
+      message,
+      retryCount: failed.retryCount + 1
+    });
+  }
+};
+
+// State Recovery
+const recoverMessageState = async () => {
+  console.log('[Message] Recovering message state');
+  
+  // Retry failed messages
+  const failedMessages = Array.from(messageState.failedMessages.values());
+  for (const { message } of failedMessages) {
+    await retryMessage(message);
+  }
+  
+  // Get offline messages
+  socket.emit(MessageEvent.OFFLINE_MESSAGES, (response: SocketResponse<Message[]>) => {
+    if (response.success) {
+      response.data.forEach(message => {
+        messageState.messages.set(message.id, message);
+        updateUI(message);
+      });
+    }
+  });
+};
+
+// Enhanced Message Event Handlers
+socket.on(MessageEvent.NEW, (message: Message) => {
+  console.log('[Message] Received new message:', message);
+  messageState.messages.set(message.id, message);
+  updateUI(message);
+});
+
+socket.on(MessageEvent.SENT, (message: Message) => {
+  console.log('[Message] Message sent confirmation:', message);
+  // Update message status in state and UI
+  if (messageState.messages.has(message.id)) {
+    messageState.messages.set(message.id, {
+      ...messageState.messages.get(message.id)!,
+      deliveryStatus: MessageDeliveryStatus.SENT
+    });
+    updateUI(message);
+  }
+});
+
+socket.on(MessageEvent.DELIVERED, (status: MessageDeliveryStatus) => {
+  console.log('[Message] Delivery status update:', status);
+  // Update delivery status in state and UI
+  if (messageState.messages.has(status.messageId)) {
+    const message = messageState.messages.get(status.messageId)!;
+    messageState.messages.set(status.messageId, {
+      ...message,
+      deliveryStatus: MessageDeliveryStatus.DELIVERED
+    });
+    updateUI(message);
+  }
+});
+
+socket.on(MessageEvent.ERROR, (error) => {
+  console.error('[Message] Message error:', error);
+  // Handle error in UI and potentially retry
+  if (error.messageId && messageState.messages.has(error.messageId)) {
+    const message = messageState.messages.get(error.messageId)!;
+    messageState.failedMessages.set(error.messageId, {
+      message,
+      retryCount: 0
+    });
+    updateUIError(error.messageId, error);
+  }
+});
+
+// Enhanced Message Update
+const updateMessage = async (messageId: string, content: string): Promise<Message> => {
+  console.log('[Message] Attempting to update message:', { messageId, content });
+  
+  // Optimistically update
+  const originalMessage = messageState.messages.get(messageId);
+  if (originalMessage) {
+    const optimisticUpdate = {
+      ...originalMessage,
+      content,
+      updatedAt: new Date()
+    };
+    messageState.messages.set(messageId, optimisticUpdate);
+    updateUI(optimisticUpdate);
+  }
+  
+  try {
+    const response = await new Promise<Message>((resolve, reject) => {
+      socket.emit(MessageEvent.UPDATE, {
+        messageId,
+        content
+      }, (response: SocketResponse<Message>) => {
+        if (response.success) {
+          resolve(response.data);
+        } else {
+          reject(new Error(response.error));
+        }
+      });
+    });
+    
+    console.log('[Message] Update success:', response);
+    messageState.messages.set(messageId, response);
+    updateUI(response);
+    return response;
+  } catch (error) {
+    console.error('[Message] Update failed:', error);
+    // Revert optimistic update
+    if (originalMessage) {
+      messageState.messages.set(messageId, originalMessage);
+      updateUI(originalMessage);
+    }
+    throw error;
+  }
+};
+
+// Enhanced Message Delete
+const deleteMessage = async (messageId: string): Promise<boolean> => {
+  console.log('[Message] Attempting to delete message:', messageId);
+  
+  // Optimistically remove from UI
+  const originalMessage = messageState.messages.get(messageId);
+  if (originalMessage) {
+    messageState.messages.delete(messageId);
+    removeFromUI(messageId);
+  }
+  
+  try {
+    const success = await new Promise<boolean>((resolve, reject) => {
+      socket.emit(MessageEvent.DELETED, {
+        messageId
+      }, (response: SocketResponse<boolean>) => {
+        if (response.success) {
+          resolve(true);
+        } else {
+          reject(new Error(response.error));
+        }
+      });
+    });
+    
+    console.log('[Message] Delete success');
+    return success;
+  } catch (error) {
+    console.error('[Message] Delete failed:', error);
+    // Revert optimistic delete
+    if (originalMessage) {
+      messageState.messages.set(messageId, originalMessage);
+      updateUI(originalMessage);
+    }
+    throw error;
+  }
+};
+
+/**
+ * Implementation Notes:
+ * 
+ * 1. Message State Management:
+ *    - messages: Successfully sent/received messages
+ *    - pendingMessages: Messages being sent
+ *    - failedMessages: Failed messages with retry count
+ * 
+ * 2. Optimistic Updates:
+ *    - Immediately show message/update in UI
+ *    - Revert if operation fails
+ *    - Clear temporary state on success
+ * 
+ * 3. Error Handling:
+ *    - Exponential backoff for retries
+ *    - Maximum retry attempts
+ *    - Proper error state in UI
+ * 
+ * 4. Offline Support:
+ *    - Queue failed messages
+ *    - Retry on reconnection
+ *    - Fetch missed messages
+ * 
+ * 5. State Recovery:
+ *    - Recover failed messages
+ *    - Get offline messages
+ *    - Restore UI state
+ */
+```
+
 ## Table of Contents
 1. [Authentication](#authentication)
 2. [API Integration](#api-integration)

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../core/database/prisma.service';
 import { EventService } from '../../core/events/event.service';
 import { MessageDeliveryService } from './services/message-delivery.service';
@@ -7,6 +7,8 @@ import { MessageDeliveryStatus, MessageDeliveryInfo } from './message.types';
 
 @Injectable()
 export class MessageService {
+  private readonly logger = new Logger(MessageService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventService: EventService,
@@ -232,5 +234,36 @@ export class MessageService {
 
   async getOfflineMessageCount(userId: string): Promise<number> {
     return this.offlineMessageService.getOfflineMessageCount(userId);
+  }
+
+  async findByChannel(channelId: string) {
+    this.logger.log(`Finding messages for channel: ${channelId}`);
+    
+    try {
+      const messages = await this.prisma.message.findMany({
+        where: { channelId },
+        include: {
+          user: true,
+          reactions: true,
+          replies: {
+            include: {
+              user: true
+            }
+          },
+          replyTo: {
+            include: {
+              user: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'asc' }
+      });
+      
+      this.logger.log(`Found ${messages.length} messages for channel ${channelId}`);
+      return messages;
+    } catch (error) {
+      this.logger.error(`Database error while fetching messages for channel ${channelId}:`, error.stack);
+      throw error;
+    }
   }
 } 

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MessageService } from './message.service';
+import { MessageController } from './message.controller';
 import { MessageGateway } from './message.gateway';
 import { MessageDeliveryService } from './services/message-delivery.service';
 import { OfflineMessageService } from './services/offline-message.service';
@@ -10,6 +11,7 @@ import { EventModule } from '../../core/events/event.module';
 
 @Module({
   imports: [RedisCacheModule, PrismaModule, EventModule],
+  controllers: [MessageController],
   providers: [
     MessageService,
     MessageGateway,

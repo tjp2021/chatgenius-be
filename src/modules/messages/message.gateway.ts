@@ -1,188 +1,114 @@
-import { SubscribeMessage, MessageBody } from '@nestjs/websockets';
-import { Injectable } from '@nestjs/common';
-import { BaseGateway } from '../../core/ws/base.gateway';
-import { EventService } from '../../core/events/event.service';
+import { WebSocketGateway, SubscribeMessage, MessageBody, ConnectedSocket, OnGatewayInit } from '@nestjs/websockets';
+import { Logger } from '@nestjs/common';
+import { Socket, Server } from 'socket.io';
+import { MessageEvent } from './dto/message-events.enum';
 import { MessageService } from './message.service';
-import { TypingIndicatorService } from './services/typing-indicator.service';
-import { AuthenticatedSocket } from '../../shared/types/ws.types';
-import { CreateMessageDto } from './dto/create-message.dto';
-import { UpdateMessageDto } from './dto/update-message.dto';
-import { OnGatewayConnection, OnGatewayDisconnect } from '@nestjs/websockets';
 
-@Injectable()
-export class MessageGateway extends BaseGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  constructor(
-    protected readonly eventService: EventService,
-    private readonly messageService: MessageService,
-    private readonly typingService: TypingIndicatorService,
-  ) {
-    super(eventService);
+@WebSocketGateway({
+  cors: {
+    origin: ['http://localhost:3000', 'https://localhost:3000'],
+    credentials: true
+  }
+})
+export class MessageGateway implements OnGatewayInit {
+  private readonly logger = new Logger(MessageGateway.name);
+
+  constructor(private readonly messageService: MessageService) {}
+
+  afterInit(server: Server) {
+    server.use((socket: Socket, next) => {
+      try {
+        const { token, userId } = socket.handshake.auth;
+        
+        if (!token || !userId) {
+          return next(new Error('Authentication failed - missing credentials'));
+        }
+
+        // Store in socket data for future use
+        socket.data.userId = userId;
+        socket.data.token = token;
+        
+        next();
+      } catch (error) {
+        next(new Error('Authentication failed'));
+      }
+    });
   }
 
-  async handleConnection(client: AuthenticatedSocket): Promise<void> {
-    if (!this.validateClient(client)) {
-      return;
-    }
-    
-    // Process any offline messages when user connects
-    const userId = this.getClientUserId(client);
-    await this.messageService.handleUserOnline(userId);
-  }
-
-  async handleDisconnect(client: AuthenticatedSocket): Promise<void> {
-    const userId = this.getClientUserId(client);
-    if (userId) {
-      await this.typingService.handleUserDisconnect(userId);
-    }
-  }
-
-  @SubscribeMessage('sendMessage')
+  @SubscribeMessage(MessageEvent.SEND)
   async handleSendMessage(
-    client: AuthenticatedSocket,
-    @MessageBody() data: CreateMessageDto,
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { channelId: string; content: string }
   ) {
+    this.logger.log(`Received message:send event from client ${client.id}:`, data);
+    
     try {
-      const message = await this.messageService.create(this.getClientUserId(client), data);
-      return this.success(message);
-    } catch (error) {
-      return this.error(error.message);
-    }
-  }
-
-  @SubscribeMessage('message:delivered')
-  async handleMessageDelivered(
-    client: AuthenticatedSocket,
-    @MessageBody() data: { messageId: string },
-  ) {
-    try {
-      await this.messageService.markAsDelivered(
-        data.messageId,
-        this.getClientUserId(client)
-      );
-      return this.success(true);
-    } catch (error) {
-      return this.error(error.message);
-    }
-  }
-
-  @SubscribeMessage('message:seen')
-  async handleMessageSeen(
-    client: AuthenticatedSocket,
-    @MessageBody() data: { messageId: string },
-  ) {
-    try {
-      await this.messageService.markAsSeen(
-        data.messageId,
-        this.getClientUserId(client)
-      );
-      return this.success(true);
-    } catch (error) {
-      return this.error(error.message);
-    }
-  }
-
-  @SubscribeMessage('message:getStatus')
-  async handleGetMessageStatus(
-    client: AuthenticatedSocket,
-    @MessageBody() data: { messageId: string },
-  ) {
-    try {
-      const status = await this.messageService.getMessageDeliveryStatus(data.messageId);
-      return this.success(status);
-    } catch (error) {
-      return this.error(error.message);
-    }
-  }
-
-  @SubscribeMessage('updateMessage')
-  async handleUpdateMessage(
-    client: AuthenticatedSocket,
-    @MessageBody() data: UpdateMessageDto,
-  ) {
-    try {
-      const message = await this.messageService.update(
-        data.messageId,
-        this.getClientUserId(client),
-        data.content
-      );
-      return this.success(message);
-    } catch (error) {
-      return this.error(error.message);
-    }
-  }
-
-  @SubscribeMessage('deleteMessage')
-  async handleDeleteMessage(
-    client: AuthenticatedSocket,
-    @MessageBody() data: { messageId: string },
-  ) {
-    try {
-      await this.messageService.delete(data.messageId, this.getClientUserId(client));
-      return this.success(true);
-    } catch (error) {
-      return this.error(error.message);
-    }
-  }
-
-  @SubscribeMessage('typing')
-  async handleTyping(
-    client: AuthenticatedSocket,
-    @MessageBody() data: { channelId: string },
-  ) {
-    try {
-      if (!this.eventService.isSubscribed(data.channelId, this.getClientUserId(client))) {
-        throw new Error('Not subscribed to channel');
+      // Get user ID from socket
+      const userId = client.data.userId;
+      if (!userId) {
+        throw new Error('User not authenticated');
       }
 
-      await this.typingService.setTyping(
-        this.getClientUserId(client),
-        data.channelId
-      );
+      // Create message
+      const message = await this.messageService.create(userId, {
+        channelId: data.channelId,
+        content: data.content
+      });
 
-      return this.success(true);
+      this.logger.log(`Message created successfully:`, { messageId: message.id });
+
+      // Emit to channel room
+      client.to(data.channelId).emit(MessageEvent.NEW, message);
+      
+      // Send confirmation to sender
+      client.emit(MessageEvent.SENT, message);
+
+      return { success: true, data: message };
     } catch (error) {
-      return this.error(error.message);
+      this.logger.error(`Error handling message:send event:`, error.stack);
+      return { success: false, error: error.message };
     }
   }
 
-  @SubscribeMessage('typing:stop')
-  async handleStopTyping(
-    client: AuthenticatedSocket,
-    @MessageBody() data: { channelId: string },
+  @SubscribeMessage(MessageEvent.DELIVERED)
+  async handleMessageDelivered(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { messageId: string }
   ) {
+    this.logger.log(`Received message:delivered event:`, data);
+    
     try {
-      await this.typingService.clearTyping(
-        this.getClientUserId(client),
-        data.channelId
-      );
-      return this.success(true);
+      const userId = client.data.userId;
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
+
+      await this.messageService.markAsDelivered(data.messageId, userId);
+      return { success: true };
     } catch (error) {
-      return this.error(error.message);
+      this.logger.error(`Error handling message:delivered event:`, error.stack);
+      return { success: false, error: error.message };
     }
   }
 
-  @SubscribeMessage('typing:get')
-  async handleGetTypingUsers(
-    client: AuthenticatedSocket,
-    @MessageBody() data: { channelId: string },
+  @SubscribeMessage(MessageEvent.READ)
+  async handleMessageRead(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { messageId: string }
   ) {
+    this.logger.log(`Received message:read event:`, data);
+    
     try {
-      const typingUsers = await this.typingService.getTypingUsers(data.channelId);
-      return this.success(typingUsers);
-    } catch (error) {
-      return this.error(error.message);
-    }
-  }
+      const userId = client.data.userId;
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
 
-  @SubscribeMessage('message:getOfflineCount')
-  async handleGetOfflineMessageCount(client: AuthenticatedSocket) {
-    try {
-      const count = await this.messageService.getOfflineMessageCount(
-        this.getClientUserId(client)
-      );
-      return this.success({ count });
+      await this.messageService.markAsSeen(data.messageId, userId);
+      return { success: true };
     } catch (error) {
-      return this.error(error.message);
+      this.logger.error(`Error handling message:read event:`, error.stack);
+      return { success: false, error: error.message };
     }
   }
 } 

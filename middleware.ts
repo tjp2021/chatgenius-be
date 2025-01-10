@@ -1,0 +1,1 @@
+// This file can be empty for now - Clerk middleware belongs in the Next.js frontend 

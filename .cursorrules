@@ -2,6 +2,79 @@
   "projectName": "SOA Chat Application",
   "description": "A service-oriented architecture chat application featuring real-time chat, AI-powered interactions, and systematic documentation of development and debugging processes.",
   "rules": {
+    "deduceCommand": {
+      "trigger": "Run deduce",
+      "description": "Analyzes the context window to deduce error sources and create an implementation plan for debugging",
+      "workflow": {
+        "contextAnalysis": {
+          "steps": [
+            "Review all prior solution attempts",
+            "Identify patterns in failed solutions",
+            "Map dependencies and interactions",
+            "Isolate common failure points"
+          ]
+        },
+        "deductiveReasoning": {
+          "process": [
+            "Process of elimination",
+            "Chain of thought reasoning",
+            "Logical deduction",
+            "Pattern recognition"
+          ],
+          "output": {
+            "format": "markdown",
+            "sections": [
+              {
+                "title": "Error Pattern Analysis",
+                "content": [
+                  "Identified patterns in errors",
+                  "Common triggers or conditions",
+                  "Environmental factors"
+                ]
+              },
+              {
+                "title": "Code Area Risk Analysis",
+                "content": [
+                  "High-risk areas identified",
+                  "Risk level assessment",
+                  "Impact evaluation",
+                  "Probability rating"
+                ]
+              },
+              {
+                "title": "Solution Candidates",
+                "content": [
+                  "Potential solutions ranked by likelihood",
+                  "Implementation complexity",
+                  "Risk mitigation strategies",
+                  "Expected outcomes"
+                ]
+              }
+            ]
+          }
+        },
+        "implementationPlan": {
+          "sections": [
+            {
+              "title": "Investigation Steps",
+              "template": "1. {step description}\n   - Expected outcome: {outcome}\n   - Verification method: {method}\n   - Risk level: {risk}"
+            },
+            {
+              "title": "Solution Approach",
+              "template": "1. {approach description}\n   - Implementation complexity: {complexity}\n   - Required changes: {changes}\n   - Validation steps: {validation}"
+            },
+            {
+              "title": "Fallback Strategy",
+              "template": "1. {strategy description}\n   - Trigger conditions: {conditions}\n   - Recovery steps: {steps}\n   - Validation: {validation}"
+            }
+          ]
+        }
+      },
+      "output": {
+        "format": "markdown",
+        "template": "# Deductive Analysis [CG-{YYYYMMDD}-{sequential_number}]\n\n## Error Pattern Analysis\n{patterns}\n\n## Risk Analysis\n{risks}\n\n## Solution Candidates\n{solutions}\n\n## Implementation Plan\n{plan}\n\n---"
+      }
+    },
     "paslCommand": {
       "trigger": "Run PASL",
       "description": "Executes a complete Problem Analysis, Solution Attempts, Final Solution, and Lessons Learned cycle",
@@ -44,38 +117,44 @@
         "example": "CG-20231218-001",
         "usage": "Include at the start of problem analysis, solution walkthrough, and learning lessons"
       },
-      "problemAnalysis": {
-        "action": "Create a problem analysis MD file and copy it to Brainlift.md only when explicitly commanded with 'Add to Brainlift.md'",
-        "command": "Add to Brainlift.md",
-        "fields": ["ID", "Error Description", "Root Cause Hypotheses", "Steps to Reproduce", "Logs or Relevant Information"],
-        "exampleEntry": {
-          "header": "Problem Analysis [CG-20231218-001]",
-          "content": "- **ID**: CG-20231218-001\n- **Error Description**: {description of the error}\n- **Root Cause Hypotheses**: {possible causes}\n- **Steps to Reproduce**: {step-by-step}\n- **Logs or Relevant Information**: {logs, screenshots, etc.}"
-        }
-      },
-      "solutionWalkthrough": {
-        "action": "Create a solution walkthrough MD file and copy it to Brainlift.md only when explicitly commanded with 'Add to Brainlift.md'",
-        "command": "Add to Brainlift.md",
-        "fields": ["ID", "Solution Description", "Why It Worked", "Key Lessons"],
-        "exampleEntry": {
-          "header": "Solution Walkthrough [CG-20231218-001]",
-          "content": "- **ID**: CG-20231218-001\n- **Solution Description**: {summary of the fix}\n- **Why It Worked**: {technical explanation}\n- **Key Lessons**: {developer insights}"
-        }
-      },
-      "learningLessons": {
-        "action": "After problem analysis and solution implementation, analyze the entire context window to extract learning lessons. Add to Brainlift.md only when explicitly commanded with 'Add to Brainlift.md'",
-        "command": "Add to Brainlift.md",
-        "timing": "After successful problem resolution",
-        "fields": [
-          "ID",
-          "Pattern Recognition",
-          "Prevention Strategies",
-          "Best Practices Learned",
-          "Future Recommendations"
+      "integrationFlow": {
+        "steps": [
+          {
+            "trigger": "Issue detected",
+            "action": "Run deduce",
+            "output": "Active analysis plan"
+          },
+          {
+            "trigger": "Solution implementation",
+            "action": "Run PASL",
+            "output": "Documentation entry"
+          },
+          {
+            "trigger": "Knowledge capture",
+            "action": "Add to Brainlift.md",
+            "output": "Permanent record"
+          }
         ],
-        "exampleEntry": {
-          "header": "Learning Lessons [CG-20231218-001]",
-          "content": "- **ID**: CG-20231218-001\n- **Pattern Recognition**: {what pattern led to this issue}\n- **Prevention Strategies**: {how to prevent similar issues}\n- **Best Practices Learned**: {what practices would have prevented this}\n- **Future Recommendations**: {specific actions for the future}"
+        "linkage": {
+          "method": "Use same CG-ID across all related entries",
+          "purpose": "Maintain traceability between analysis and documentation"
+        }
+      },
+      "commandUsage": {
+        "deduce": {
+          "when": "During active debugging",
+          "purpose": "Plan and execute solution",
+          "output": "Action plan"
+        },
+        "pasl": {
+          "when": "After solution implementation",
+          "purpose": "Document process and learnings",
+          "output": "Knowledge entry"
+        },
+        "brainlift": {
+          "when": "After PASL completion",
+          "purpose": "Permanent knowledge capture",
+          "output": "Searchable documentation"
         }
       }
     },
@@ -119,6 +198,26 @@
             "length": 66,
             "usage": "Used to separate distinct entries and analysis cycles"
           }
+        }
+      },
+      "entryTypes": {
+        "deduceEntry": {
+          "format": "# Deductive Analysis [CG-{ID}]\n{content}\n\n---",
+          "required": ["errorAnalysis", "riskAssessment", "solutionPlan"]
+        },
+        "paslEntry": {
+          "format": "# PASL Documentation [CG-{ID}]\n{content}\n\n---",
+          "required": ["problem", "attempts", "solution", "lessons"]
+        }
+      },
+      "linking": {
+        "crossReferences": {
+          "format": "Related: [CG-{ID}]",
+          "types": ["deduce-to-pasl", "pasl-to-deduce", "issue-to-issue"]
+        },
+        "tags": {
+          "format": "#tag-name",
+          "categories": ["error-type", "component", "severity"]
         }
       }
     },
@@ -190,6 +289,232 @@
           "codeQuality": "Keep changes focused and maintainable"
         }
       }
+    },
+    "documentCommand": {
+      "trigger": "Run doc",
+      "description": "Generates or updates extremely detailed technical documentation with strict accuracy checks",
+      "categories": {
+        "api": {
+          "required": [
+            "endpoint",
+            "method",
+            "protocol",
+            "port",
+            "baseUrl",
+            "headers",
+            "authentication",
+            "request_payload",
+            "response_payload",
+            "error_responses",
+            "example_requests",
+            "example_responses"
+          ],
+          "template": {
+            "endpoint": {
+              "path": "string (full path including base)",
+              "method": "HTTP method",
+              "protocol": "HTTP/HTTPS",
+              "port": "number (development and production)",
+              "authentication": {
+                "type": "Bearer/Clerk/etc",
+                "token_location": "header/query/body",
+                "example": "actual example with proper format"
+              }
+            },
+            "request": {
+              "headers": ["required headers with examples"],
+              "payload": {
+                "type": "application/json",
+                "schema": "TypeScript interface",
+                "example": "complete example",
+                "validation": ["all validation rules"]
+              }
+            },
+            "response": {
+              "success": {
+                "status": "number",
+                "schema": "TypeScript interface",
+                "example": "complete example"
+              },
+              "errors": [{
+                "status": "number",
+                "condition": "when this error occurs",
+                "response": "error response format"
+              }]
+            }
+          }
+        },
+        "websocket": {
+          "required": [
+            "event_name",
+            "direction",
+            "authentication",
+            "payload",
+            "response",
+            "error_handling",
+            "sequence_diagram"
+          ],
+          "template": {
+            "connection": {
+              "url": "WebSocket URL with port",
+              "protocol": "ws/wss",
+              "authentication": {
+                "type": "type of auth",
+                "token_format": "exact format required",
+                "example": "complete example"
+              }
+            },
+            "events": {
+              "name": "event name",
+              "direction": "client->server/server->client/bidirectional",
+              "payload": {
+                "schema": "TypeScript interface",
+                "validation": ["validation rules"],
+                "example": "complete example"
+              },
+              "response": {
+                "schema": "TypeScript interface",
+                "example": "complete example"
+              },
+              "error_handling": {
+                "error_types": ["possible errors"],
+                "recovery": "recovery strategy",
+                "client_handling": "how client should handle"
+              }
+            },
+            "sequence": {
+              "normal_flow": ["ordered steps"],
+              "error_flow": ["error handling steps"],
+              "reconnection": ["reconnection steps"]
+            }
+          }
+        },
+        "database": {
+          "required": [
+            "model",
+            "fields",
+            "relations",
+            "indexes",
+            "constraints",
+            "update_patterns"
+          ],
+          "template": {
+            "model": {
+              "name": "model name",
+              "schema": "complete Prisma schema",
+              "indexes": ["all indexes"],
+              "constraints": ["all constraints"]
+            },
+            "operations": {
+              "create": {
+                "structure": "correct data structure",
+                "example": "complete example",
+                "validation": ["validation rules"]
+              },
+              "update": {
+                "structure": "correct nested update structure",
+                "example": "complete example with nested data",
+                "common_patterns": ["documented update patterns"]
+              },
+              "relations": {
+                "type": "1-1/1-n/n-n",
+                "foreign_keys": ["documented keys"],
+                "cascade": "cascade behavior"
+              }
+            }
+          }
+        },
+        "authentication": {
+          "required": [
+            "flow",
+            "token_handling",
+            "validation_points",
+            "error_handling"
+          ],
+          "template": {
+            "flow": {
+              "steps": ["ordered authentication steps"],
+              "sequence": "detailed sequence diagram",
+              "validation_points": ["all validation checks"]
+            },
+            "tokens": {
+              "type": "token type",
+              "format": "exact format",
+              "location": "where token should be",
+              "validation": "how token is validated"
+            },
+            "errors": {
+              "types": ["all possible errors"],
+              "handling": ["how each error is handled"],
+              "recovery": ["recovery strategies"]
+            }
+          }
+        }
+      },
+      "output": {
+        "format": "markdown",
+        "validation": {
+          "required": true,
+          "rules": [
+            "All required fields must be filled",
+            "Examples must be actual working code",
+            "No placeholders allowed",
+            "Must include error scenarios",
+            "Must include sequence diagrams for flows"
+          ]
+        },
+        "template": "# {Category} Documentation\n\n## Overview\n{description}\n\n## Details\n{details}\n\n## Examples\n{examples}\n\n## Error Handling\n{errors}\n\n## Sequence Diagrams\n{diagrams}\n\n---"
+      },
+      "sanityCheck": {
+        "trigger": "sanity check",
+        "description": "Performs a thorough second-pass verification of the generated documentation",
+        "verificationSteps": [
+          {
+            "step": "Accuracy Verification",
+            "checks": [
+              "Cross-reference with actual code implementation",
+              "Verify all endpoints, methods, and parameters",
+              "Confirm protocol and port specifications",
+              "Validate authentication flow accuracy",
+              "Check all TypeScript interfaces match codebase"
+            ]
+          },
+          {
+            "step": "Completeness Check",
+            "checks": [
+              "Ensure no missing error scenarios",
+              "Verify all edge cases are documented",
+              "Confirm all required fields are filled",
+              "Check sequence diagrams cover all flows",
+              "Validate example completeness"
+            ]
+          },
+          {
+            "step": "Consistency Validation",
+            "checks": [
+              "Check naming consistency across documentation",
+              "Verify type definitions are consistent",
+              "Confirm error handling patterns are uniform",
+              "Validate event naming conventions",
+              "Check payload structure consistency"
+            ]
+          },
+          {
+            "step": "Implementation Verification",
+            "checks": [
+              "Test all documented examples",
+              "Verify error responses match implementation",
+              "Confirm authentication flows are accurate",
+              "Check database operations match Prisma schema",
+              "Validate WebSocket event implementations"
+            ]
+          }
+        ],
+        "output": {
+          "format": "markdown",
+          "template": "# Sanity Check Report [CG-{YYYYMMDD}-{sequential_number}]\n\n## Verification Results\n\n{results}\n\n## Identified Issues\n\n{issues}\n\n## Recommended Updates\n\n{updates}\n\n## Confidence Level\n\n{confidence}\n\n---"
+        }
+      }
     }
   },
   "examples": {
@@ -200,7 +525,11 @@
     "contextWindowEntry": "Context Window: \n\nPrompt: Summarize the project architecture.\nRelevant Files: chatgenius-prd.md, implementation-plan (1).md\n\n---",
     "problemAnalysisEntry": "Problem Analysis [CG-20231218-001]\n\n- **ID**: CG-20231218-001\n- **Error Description**: API not responding.\n- **Root Cause Hypotheses**: Network latency, incorrect API key.\n- **Steps to Reproduce**: Call endpoint with key X.\n- **Logs or Relevant Information**: {add details}\n\n---",
     "solutionWalkthroughEntry": "Solution Walkthrough [CG-20231218-001]\n\n- **ID**: CG-20231218-001\n- **Solution Description**: Corrected API key in environment variables.\n- **Why It Worked**: The wrong key was causing authentication failure.\n- **Key Lessons**: Always double-check environment variable settings.\n\n---",
-    "learningLessonsEntry": "Learning Lessons [CG-20231218-001]\n\n- **ID**: CG-20231218-001\n- **Pattern Recognition**: Incomplete API endpoint updates across components\n- **Prevention Strategies**: Implement systematic dependency checking\n- **Best Practices Learned**: Update all related components when changing APIs\n- **Future Recommendations**: Create automated tests for API consistency\n\n==================================================================\n"
+    "learningLessonsEntry": "Learning Lessons [CG-20231218-001]\n\n- **ID**: CG-20231218-001\n- **Pattern Recognition**: Incomplete API endpoint updates across components\n- **Prevention Strategies**: Implement systematic dependency checking\n- **Best Practices Learned**: Update all related components when changing APIs\n- **Future Recommendations**: Create automated tests for API consistency\n\n==================================================================",
+    "deduceAnalysisExample": {
+      "header": "Deductive Analysis [CG-20231218-002]",
+      "content": "## Error Pattern Analysis\n- Pattern 1: Connection drops after authentication\n- Pattern 2: Intermittent token validation failures\n\n## Risk Analysis\n1. **High Risk**: Token validation logic (90% probability)\n   - Impact: Authentication failures\n   - Affected areas: All authenticated requests\n\n## Solution Candidates\n1. **Token Validation Fix**\n   - Complexity: Medium\n   - Implementation: Update validation logic\n   - Expected outcome: Stable connections\n\n## Implementation Plan\n1. Investigate token validation\n2. Add logging checkpoints\n3. Implement fix\n4. Validate solution"
+    }
   }
 }
 
