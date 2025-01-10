@@ -9,9 +9,14 @@ export class PrismaChannelRepository implements ChannelRepository {
   constructor(private prisma: PrismaService) {}
 
   async create(userId: string, data: CreateChannelDto): Promise<Channel> {
+    const channelData = {
+      ...data,
+      type: data.type || ChannelType.PUBLIC,
+    };
+
     return this.prisma.channel.create({
       data: {
-        ...data,
+        ...channelData,
         createdById: userId,
         members: {
           create: {

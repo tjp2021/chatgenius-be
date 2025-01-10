@@ -14,9 +14,11 @@ import { WsGuard } from '../../shared/guards/ws.guard';
 @Injectable()
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL,
+    origin: [process.env.FRONTEND_URL, process.env.FRONTEND_URL?.replace('http', 'ws')],
     credentials: true,
   },
+  path: '/api/socket/io',
+  transports: ['websocket'],
 })
 @UseGuards(WsGuard)
 export class WsGateway extends BaseGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
