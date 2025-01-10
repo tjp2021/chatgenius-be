@@ -3,9 +3,11 @@ import { MessageService } from './message.service';
 import { MessageGateway } from './message.gateway';
 import { MessageDeliveryService } from './services/message-delivery.service';
 import { RedisCacheModule } from '../../core/cache/redis.module';
+import { PrismaModule } from '../../core/database/prisma.module';
+import { EventModule } from '../../core/events/event.module';
 
 @Module({
-  imports: [RedisCacheModule],
+  imports: [RedisCacheModule, PrismaModule, EventModule],
   providers: [MessageService, MessageGateway, MessageDeliveryService],
   exports: [MessageService],
 })

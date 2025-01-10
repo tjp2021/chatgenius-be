@@ -1,23 +1,18 @@
 import { Message } from '../../core/events/event.types';
+import { MessageDeliveryStatus as PrismaMessageDeliveryStatus } from '@prisma/client';
 
-export enum MessageDeliveryStatus {
-  SENDING = 'SENDING',
-  SENT = 'SENT',         // Message reached server
-  DELIVERED = 'DELIVERED', // Message reached recipient
-  FAILED = 'FAILED',     // Delivery failed
-  SEEN = 'SEEN'          // Message was seen by recipient
-}
+export { PrismaMessageDeliveryStatus as MessageDeliveryStatus };
 
 export interface MessageDeliveryInfo {
   messageId: string;
-  status: MessageDeliveryStatus;
+  status: PrismaMessageDeliveryStatus;
   recipientId: string;
   timestamp: Date;
   retryCount?: number;
 }
 
 export interface MessageWithDelivery extends Message {
-  deliveryStatus: MessageDeliveryStatus;
+  deliveryStatus: PrismaMessageDeliveryStatus;
   deliveredAt?: Date;
   seenAt?: Date;
 }

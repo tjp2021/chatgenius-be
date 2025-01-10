@@ -166,7 +166,7 @@ export class MessageService {
     await this.deliveryService.updateDeliveryStatus(
       messageId,
       recipientId,
-      MessageDeliveryStatus.SEEN
+      MessageDeliveryStatus.READ
     );
 
     const message = await this.findById(messageId);
