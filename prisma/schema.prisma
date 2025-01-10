@@ -19,14 +19,35 @@ enum UserRole {
   ADMIN
 }
 
+enum ChannelType {
+  PUBLIC
+  PRIVATE
+  DM
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MessageDeliveryStatus {
+  SENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
 model User {
   id         String    @id
   email      String?
   name       String?
   imageUrl   String?
+  isOnline   Boolean   @default(false)
+  lastSeen   DateTime  @default(now())
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
-  isOnline   Boolean   @default(false)
 
   // Relations
   channels        Channel[]       @relation("CreatedChannels")
@@ -49,6 +70,7 @@ model Channel {
   type        ChannelType
   createdById String
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   lastActivityAt DateTime @default(now()) @map("last_activity_at")
   memberCount  Int      @default(0) @map("member_count")
 
@@ -61,6 +83,41 @@ model Channel {
   invitations    ChannelInvitation[]
 
   @@map("channels")
+}
+
+model Message {
+  id            String    @id @default(uuid())
+  content       String
+  channelId     String
+  userId        String
+  replyToId     String?
+  deliveryStatus MessageDeliveryStatus @default(SENT)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  channel       Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replyTo       Message?  @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies       Message[] @relation("Replies")
+  reactions     Reaction[]
+  readReceipts  ReadReceipt[]
+
+  @@map("messages")
+}
+
+model Reaction {
+  messageId String
+  userId    String
+  type      String
+  createdAt DateTime @default(now())
+
+  // Relations
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId, type])
+  @@map("reactions")
 }
 
 model ChannelMember {
@@ -80,6 +137,52 @@ model ChannelMember {
   @@map("channel_members")
 }
 
+model ReadReceipt {
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  // Relations
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+  @@map("read_receipts")
+}
+
+model ChannelDraft {
+  id        String   @id @default(uuid())
+  channelId String
+  userId    String
+  content   String
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@map("channel_drafts")
+}
+
+model ChannelInvitation {
+  id          String   @id @default(uuid())
+  channelId   String
+  inviterId   String
+  inviteeId   String
+  status      String   @default("PENDING") // PENDING, ACCEPTED, REJECTED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  inviter     User     @relation("SentInvitations", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee     User     @relation("ReceivedInvitations", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, inviterId, inviteeId])
+  @@map("channel_invitations")
+}
+
 model ChannelNavigation {
   id        String   @id @default(uuid())
   userId    String
@@ -93,142 +196,4 @@ model ChannelNavigation {
 
   @@unique([userId, channelId])
   @@map("channel_navigation")
-}
-
-enum MessageDeliveryStatus {
-  SENT
-  DELIVERED
-  READ
-  FAILED
-}
-
-model Message {
-  id          String      @id @default(cuid())
-  content     String
-  channelId   String
-  userId      String
-  parentId    String?
-  replyCount  Int         @default(0)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  deliveryStatus MessageDeliveryStatus @default(SENT)
-  
-  // Relations
-  channel     Channel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parent      Message?    @relation("ThreadReplies", fields: [parentId], references: [id], onDelete: SetNull)
-  replies     Message[]   @relation("ThreadReplies")
-  reactions   Reaction[]
-  readBy      ReadReceipt[]
-  attachments Attachment[]
-
-  @@map("messages")
-  @@index([channelId])
-  @@index([userId])
-  @@index([parentId])
-}
-
-model Reaction {
-  id        String   @id @default(cuid())
-  messageId String
-  userId    String
-  emoji     String
-  createdAt DateTime @default(now())
-  
-  // Relations
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("reactions")
-  @@unique([messageId, userId, emoji])
-  @@index([messageId])
-  @@index([userId])
-}
-
-model ReadReceipt {
-  id        String   @id @default(cuid())
-  messageId String
-  userId    String
-  readAt    DateTime @default(now())
-  
-  // Relations
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("read_receipts")
-  @@index([messageId])
-  @@index([userId])
-}
-
-model Attachment {
-  id        String   @id @default(cuid())
-  messageId String
-  url       String
-  type      String   
-  name      String
-  createdAt DateTime @default(now())
-  
-  // Relations
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-
-  @@map("attachments")
-  @@index([messageId])
-}
-
-enum ChannelType {
-  PUBLIC
-  PRIVATE
-  DM
-}
-
-enum MemberRole {
-  OWNER
-  ADMIN
-  MEMBER
-}
-
-model ChannelDraft {
-  id        String   @id @default(uuid())
-  userId    String
-  channelId String
-  content   String
-  deviceId  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, channelId, deviceId])
-  @@map("channel_drafts")
-  @@index([userId])
-  @@index([channelId])
-}
-
-model ChannelInvitation {
-  id          String      @id @default(uuid())
-  channelId   String
-  userId      String
-  inviterId   String
-  role        MemberRole  @default(MEMBER)
-  status      InvitationStatus @default(PENDING)
-  createdAt   DateTime    @default(now())
-  expiresAt   DateTime?
-
-  // Relations
-  channel     Channel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  user        User        @relation("ReceivedInvitations", fields: [userId], references: [id], onDelete: Cascade)
-  inviter     User        @relation("SentInvitations", fields: [inviterId], references: [id], onDelete: Cascade)
-
-  @@unique([channelId, userId])
-  @@map("channel_invitations")
-  @@index([userId])
-  @@index([channelId])
-}
-
-enum InvitationStatus {
-  PENDING
-  ACCEPTED
-  REJECTED
-  EXPIRED
 }
