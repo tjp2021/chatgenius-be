@@ -101,7 +101,11 @@ export class PrismaChannelRepository implements ChannelRepository {
       where: { id: channelId },
       data,
       include: {
-        members: true,
+        members: {
+          include: {
+            user: true
+          }
+        },
         createdBy: true,
       },
     });
@@ -117,7 +121,11 @@ export class PrismaChannelRepository implements ChannelRepository {
     return this.prisma.channel.findUnique({
       where: { id: channelId },
       include: {
-        members: true,
+        members: {
+          include: {
+            user: true
+          }
+        },
         createdBy: true,
       },
     });
@@ -170,7 +178,11 @@ export class PrismaChannelRepository implements ChannelRepository {
         lastActivityAt: "desc"
       },
       include: {
-        members: true,
+        members: {
+          include: {
+            user: true
+          }
+        },
         createdBy: true
       }
     });

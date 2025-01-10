@@ -479,3 +479,76 @@ Learning Lessons [CG-20240110-001]
   4. Add integration tests that verify connection sequence
 
 ==================================================================
+
+Problem Analysis [CG-20240110-001]
+
+- **Issue Description**: Private channel creation is failing due to memberIds not being properly passed through the system
+- **Symptoms**: 
+  - memberIds appears twice in the data structure
+  - Service receives memberIds as undefined
+  - Validation error: "No members provided for private channel"
+- **Impact**: 
+  - Users cannot create private channels
+  - Member management is broken
+  - Poor user experience
+- **Initial Investigation**: 
+  - Logs show memberIds exists inside data object but not as separate parameter
+  - Data structure shows: `{ data: { memberIds: [...] }, memberIds: undefined }`
+- **Root Cause Hypotheses**: 
+  1. Gateway is not properly extracting memberIds from payload
+  2. Service is looking for memberIds in wrong location
+  3. Data transformation between layers is inconsistent
+
+Solution Attempts [CG-20240110-001]
+
+- **Attempt 1**: Modified gateway to extract memberIds from payload
+  - Result: Failed - memberIds still undefined in service
+  - Learnings: The payload structure is more complex than initially thought
+
+- **Attempt 2**: Added payload parsing and data cleaning in service
+  - Result: Failed - memberIds still not being extracted correctly
+  - Learnings: The issue is in how we're passing the data between layers
+
+- **Attempt 3**: Implemented detailed logging and data extraction in service
+  - Result: Identified that memberIds exists in data object but not being extracted
+  - Learnings: Need to handle both locations where memberIds might exist
+
+Final Solution [CG-20240110-001]
+
+- **Solution Description**: Modified service to extract memberIds from both possible locations
+- **Implementation Details**:
+  ```typescript
+  // Extract memberIds from data if it exists there
+  const extractedMemberIds = (data as any).memberIds || memberIds || [];
+  
+  // Create clean data object without memberIds
+  const { memberIds: _, ...cleanData } = data as any;
+  ```
+- **Verification**: Added comprehensive logging at each step to track data flow
+- **Side Effects**: 
+  - Improved logging for debugging
+  - More robust handling of different payload structures
+
+Lessons Learned [CG-20240110-001]
+
+- **Technical Insights**: 
+  - Data transformation between layers needs to be consistent
+  - Need to handle multiple possible data structures
+  - Logging is crucial for debugging complex data flows
+
+- **Process Improvements**: 
+  - Add more comprehensive logging by default
+  - Implement stricter typing for payloads
+  - Standardize data structure between layers
+
+- **Prevention Strategies**: 
+  - Define clear data contracts between layers
+  - Add type validation at layer boundaries
+  - Implement consistent data cleaning strategies
+
+- **Documentation Updates**: 
+  - Document expected payload structures
+  - Update API documentation with clear examples
+  - Add notes about data transformation between layers
+
+==================================================================

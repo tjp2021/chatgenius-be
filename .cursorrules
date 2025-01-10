@@ -2,6 +2,33 @@
   "projectName": "SOA Chat Application",
   "description": "A service-oriented architecture chat application featuring real-time chat, AI-powered interactions, and systematic documentation of development and debugging processes.",
   "rules": {
+    "paslCommand": {
+      "trigger": "Run PASL",
+      "description": "Executes a complete Problem Analysis, Solution Attempts, Final Solution, and Lessons Learned cycle",
+      "sequence": [
+        {
+          "step": "Problem Analysis",
+          "template": "Problem Analysis [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Issue Description**: {description}\n- **Symptoms**: {observed behavior}\n- **Impact**: {what's affected}\n- **Initial Investigation**: {first findings}\n- **Root Cause Hypotheses**: {possible causes}"
+        },
+        {
+          "step": "Solution Attempts",
+          "template": "Solution Attempts [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Attempt 1**: {description}\n  - Result: {outcome}\n  - Learnings: {what we discovered}\n- **Attempt 2**: {description}\n  - Result: {outcome}\n  - Learnings: {what we discovered}"
+        },
+        {
+          "step": "Final Solution",
+          "template": "Final Solution [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Solution Description**: {what was done}\n- **Implementation Details**: {how it was done}\n- **Verification**: {how we confirmed it worked}\n- **Side Effects**: {any implications}"
+        },
+        {
+          "step": "Lessons Learned",
+          "template": "Lessons Learned [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Technical Insights**: {what we learned about the system}\n- **Process Improvements**: {what we could do better}\n- **Prevention Strategies**: {how to avoid similar issues}\n- **Documentation Updates**: {what needs to be updated}"
+        }
+      ],
+      "output": {
+        "format": "markdown",
+        "divider": "==================================================================",
+        "autoSave": false
+      }
+    },
     "contextWindowLogging": {
       "enabled": true,
       "action": "Document the prompt and relevant files in Brainlift.md only when explicitly commanded with 'Add to Brainlift.md'",
