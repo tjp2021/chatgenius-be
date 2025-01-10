@@ -2,11 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { PrismaService } from './database/prisma.service';
-import { EventService } from './events/event.service';
 import { WsGateway } from './ws/ws.gateway';
 import { SharedModule } from '../shared/shared.module';
+import { EventModule } from './events/event.module';
 
-const services = [PrismaService, EventService];
+const services = [PrismaService];
 const gateways = [WsGateway];
 
 @Module({
@@ -20,6 +20,7 @@ const gateways = [WsGateway];
       max: 100, // maximum number of items in cache
     }),
     SharedModule,
+    EventModule,
   ],
   providers: [...services, ...gateways],
   exports: [...services, ...gateways, CacheModule],

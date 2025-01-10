@@ -1,52 +1,68 @@
-import { WebSocketGateway, SubscribeMessage, MessageBody, ConnectedSocket, OnGatewayInit } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
-import { Socket, Server } from 'socket.io';
+import { WebSocketGateway, SubscribeMessage, MessageBody, ConnectedSocket } from '@nestjs/websockets';
+import { Socket } from 'socket.io';
 import { MessageEvent } from './dto/message-events.enum';
 import { MessageService } from './message.service';
+import { BaseGateway } from '../../core/ws/base.gateway';
+import { EventService } from '../../core/events/event.service';
+import { AuthenticatedSocket } from '../../shared/types/ws.types';
 
 @WebSocketGateway({
   cors: {
-    origin: ['http://localhost:3000', 'https://localhost:3000'],
+    origin: process.env.FRONTEND_URL,
     credentials: true
-  }
+  },
+  transports: ['websocket']
 })
-export class MessageGateway implements OnGatewayInit {
-  private readonly logger = new Logger(MessageGateway.name);
+export class MessageGateway extends BaseGateway {
+  constructor(
+    private readonly messageService: MessageService,
+    protected readonly eventService: EventService
+  ) {
+    super(eventService);
+  }
 
-  constructor(private readonly messageService: MessageService) {}
+  async handleConnection(client: AuthenticatedSocket) {
+    await super.handleConnection(client);
+    
+    // Get user's channels and join their rooms
+    const userId = this.getClientUserId(client);
+    if (userId) {
+      const channels = await this.messageService.getUserChannels(userId);
+      channels.forEach(channel => {
+        client.join(`channel:${channel.id}`);
+        this.eventService.subscribe(channel.id, client.id, userId);
+      });
+    }
+  }
 
-  afterInit(server: Server) {
-    server.use((socket: Socket, next) => {
-      try {
-        const { token, userId } = socket.handshake.auth;
-        
-        if (!token || !userId) {
-          return next(new Error('Authentication failed - missing credentials'));
-        }
-
-        // Store in socket data for future use
-        socket.data.userId = userId;
-        socket.data.token = token;
-        
-        next();
-      } catch (error) {
-        next(new Error('Authentication failed'));
-      }
-    });
+  async handleDisconnect(client: AuthenticatedSocket) {
+    const userId = this.getClientUserId(client);
+    if (userId) {
+      const channels = await this.messageService.getUserChannels(userId);
+      channels.forEach(channel => {
+        this.eventService.unsubscribe(channel.id, client.id, userId);
+        client.leave(`channel:${channel.id}`);
+      });
+    }
+    await super.handleDisconnect(client);
   }
 
   @SubscribeMessage(MessageEvent.SEND)
   async handleSendMessage(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: { channelId: string; content: string }
   ) {
-    this.logger.log(`Received message:send event from client ${client.id}:`, data);
-    
     try {
       // Get user ID from socket
-      const userId = client.data.userId;
+      const userId = this.getClientUserId(client);
       if (!userId) {
         throw new Error('User not authenticated');
+      }
+
+      // Ensure client is in the channel room
+      if (!client.rooms.has(`channel:${data.channelId}`)) {
+        client.join(`channel:${data.channelId}`);
+        this.eventService.subscribe(data.channelId, client.id, userId);
       }
 
       // Create message
@@ -55,60 +71,45 @@ export class MessageGateway implements OnGatewayInit {
         content: data.content
       });
 
-      this.logger.log(`Message created successfully:`, { messageId: message.id });
-
-      // Emit to channel room
-      client.to(data.channelId).emit(MessageEvent.NEW, message);
-      
-      // Send confirmation to sender
-      client.emit(MessageEvent.SENT, message);
-
-      return { success: true, data: message };
+      return this.success(message);
     } catch (error) {
-      this.logger.error(`Error handling message:send event:`, error.stack);
-      return { success: false, error: error.message };
+      return this.error(error.message);
     }
   }
 
   @SubscribeMessage(MessageEvent.DELIVERED)
   async handleMessageDelivered(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: { messageId: string }
   ) {
-    this.logger.log(`Received message:delivered event:`, data);
-    
     try {
-      const userId = client.data.userId;
+      const userId = this.getClientUserId(client);
       if (!userId) {
         throw new Error('User not authenticated');
       }
 
       await this.messageService.markAsDelivered(data.messageId, userId);
-      return { success: true };
+      return this.success(true);
     } catch (error) {
-      this.logger.error(`Error handling message:delivered event:`, error.stack);
-      return { success: false, error: error.message };
+      return this.error(error.message);
     }
   }
 
   @SubscribeMessage(MessageEvent.READ)
   async handleMessageRead(
-    @ConnectedSocket() client: Socket,
+    @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: { messageId: string }
   ) {
-    this.logger.log(`Received message:read event:`, data);
-    
     try {
-      const userId = client.data.userId;
+      const userId = this.getClientUserId(client);
       if (!userId) {
         throw new Error('User not authenticated');
       }
 
       await this.messageService.markAsSeen(data.messageId, userId);
-      return { success: true };
+      return this.success(true);
     } catch (error) {
-      this.logger.error(`Error handling message:read event:`, error.stack);
-      return { success: false, error: error.message };
+      return this.error(error.message);
     }
   }
 } 

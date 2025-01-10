@@ -7,7 +7,7 @@ import {
 import { Server } from 'socket.io';
 import { EventService } from '../events/event.service';
 import { AuthenticatedSocket } from '../../shared/types/ws.types';
-import { Injectable, UseGuards } from '@nestjs/common';
+import { Injectable, UseGuards, Logger } from '@nestjs/common';
 import { BaseGateway } from './base.gateway';
 import { WsGuard } from '../../shared/guards/ws.guard';
 
@@ -22,12 +22,16 @@ import { WsGuard } from '../../shared/guards/ws.guard';
 })
 @UseGuards(WsGuard)
 export class WsGateway extends BaseGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+  private readonly logger = new Logger(WsGateway.name);
+
   constructor(protected readonly eventService: EventService) {
     super(eventService);
   }
 
   afterInit(server: Server) {
+    this.logger.log('WsGateway initialized, setting server in EventService');
     this.eventService.setServer(server);
+    this.logger.log('Server successfully set in EventService');
   }
 
   async handleConnection(client: AuthenticatedSocket) {
