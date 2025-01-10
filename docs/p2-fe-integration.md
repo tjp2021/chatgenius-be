@@ -339,6 +339,114 @@ const getChannelMembers = async (channelId: string) => {
   const response = await api.get(`/channels/${channelId}/members`);
   return response.data;
 };
+
+// Leave channel behavior
+interface ChannelLeaveResponse {
+  nextChannel: {
+    channelId: string;
+    type: 'PUBLIC' | 'PRIVATE' | 'DM';
+    lastViewedAt: string;
+    unreadState: boolean;
+  } | null;
+}
+
+// Leave channel
+const leaveChannel = async (channelId: string, shouldDelete: boolean = false) => {
+  const response = await api.delete<ChannelLeaveResponse>(
+    `/channels/${channelId}/leave`,
+    {
+      params: { shouldDelete }
+    }
+  );
+  return response.data;
+};
+
+/**
+ * Channel Leave Behavior:
+ * 
+ * 1. Regular Member Leaving:
+ *    - Membership is removed
+ *    - Channel member count is updated
+ *    - Navigation history is cleaned up
+ *    - Draft messages are removed
+ *    - Returns next channel for navigation
+ * 
+ * 2. Owner Leaving:
+ *    - With shouldDelete=true:
+ *      • Entire channel and all memberships are deleted
+ *    - With shouldDelete=false:
+ *      • If other members exist: Ownership transfers to next member
+ *      • If no other members: Channel is deleted
+ * 
+ * 3. Channel Navigation Priority:
+ *    After leaving, automatically navigates to next channel following priority:
+ *    1. Public Channels (highest)
+ *    2. Private Channels
+ *    3. Direct Messages (lowest)
+ *    4. Welcome screen (if no channels remain)
+ * 
+ * 4. Cache Handling:
+ *    The following are automatically invalidated:
+ *    - User's channel membership
+ *    - Channel list
+ *    - Channel activity data
+ */
+
+// Example usage with navigation
+const handleChannelLeave = async (channelId: string, isOwner: boolean) => {
+  try {
+    const { nextChannel } = await leaveChannel(channelId, isOwner);
+    
+    if (nextChannel) {
+      // Navigate to next channel based on priority
+      navigate(`/channels/${nextChannel.channelId}`);
+    } else {
+      // No channels left, show welcome screen
+      navigate('/welcome');
+    }
+  } catch (error) {
+    // Handle errors appropriately
+    console.error('Error leaving channel:', error);
+  }
+};
+
+/**
+ * WebSocket Events for Channel Leave:
+ * 
+ * 1. Client-to-Server:
+ *    socket.emit('channel:leave', { channelId: string });
+ * 
+ * 2. Server-to-Client Events to Listen For:
+ *    // When any member leaves the channel
+ *    socket.on('channel.member_left', ({ 
+ *      channelId: string,
+ *      userId: string 
+ *    }) => {
+ *      // Update member list
+ *      // Update member count
+ *      // If userId matches current user, cleanup local state
+ *    });
+ * 
+ *    // When channel ownership changes
+ *    socket.on('channel.updated', (channel) => {
+ *      // Update channel data
+ *      // Update owner status if applicable
+ *    });
+ * 
+ *    // When channel is deleted (if owner left with shouldDelete=true)
+ *    socket.on('channel.deleted', ({ 
+ *      channelId: string 
+ *    }) => {
+ *      // Remove channel from list
+ *      // Navigate away if current channel
+ *    });
+ * 
+ * Note: The server automatically:
+ * 1. Removes user from channel room
+ * 2. Updates member count
+ * 3. Broadcasts member_left event
+ * 4. Handles ownership transfer if needed
+ */
 ```
 
 ### Channel Invitations

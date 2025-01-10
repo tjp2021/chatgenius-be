@@ -47,8 +47,9 @@ export class ChannelController {
   async leaveChannel(
     @User('id') userId: string,
     @Param('id') channelId: string,
+    @Query('shouldDelete') shouldDelete?: boolean,
   ): Promise<void> {
-    await this.channelService.leaveChannel(userId, channelId);
+    await this.channelService.leaveChannel(userId, channelId, shouldDelete);
   }
 
   @Get()

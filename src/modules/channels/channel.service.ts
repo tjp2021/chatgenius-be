@@ -85,7 +85,7 @@ export class ChannelService {
     });
   }
 
-  async leaveChannel(userId: string, channelId: string): Promise<void> {
+  async leaveChannel(userId: string, channelId: string, shouldDelete: boolean = false): Promise<void> {
     const channel = await this.repository.findById(channelId);
     if (!channel) {
       throw new NotFoundException('Channel not found');
@@ -97,7 +97,31 @@ export class ChannelService {
     }
 
     if (member.role === 'OWNER') {
-      throw new ForbiddenException('Channel owner cannot leave the channel');
+      if (shouldDelete) {
+        // Delete the entire channel if owner wants to delete
+        await this.deleteChannel(userId, channelId);
+        return;
+      }
+
+      // Get other members to potentially transfer ownership
+      const otherMembers = await this.repository.findMembers(channelId);
+      const nonOwnerMembers = otherMembers.filter(m => m.userId !== userId);
+
+      if (nonOwnerMembers.length === 0) {
+        // No other members, delete the channel
+        await this.deleteChannel(userId, channelId);
+        return;
+      }
+
+      // Transfer ownership to the next member
+      const nextOwner = nonOwnerMembers[0];
+      await this.repository.update(channelId, {
+        channelId,
+        memberRole: {
+          userId: nextOwner.userId,
+          role: 'OWNER'
+        }
+      });
     }
 
     await this.repository.removeMember(channelId, userId);

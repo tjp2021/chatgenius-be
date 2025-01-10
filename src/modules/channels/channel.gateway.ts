@@ -63,10 +63,10 @@ export class ChannelGateway extends BaseGateway {
   @SubscribeMessage('leaveChannel')
   async handleLeaveChannel(
     client: AuthenticatedSocket,
-    @MessageBody() data: { channelId: string },
+    @MessageBody() data: { channelId: string; shouldDelete?: boolean },
   ) {
     try {
-      await this.channelService.leaveChannel(this.getClientUserId(client), data.channelId);
+      await this.channelService.leaveChannel(this.getClientUserId(client), data.channelId, data.shouldDelete);
       this.eventService.unsubscribe(data.channelId, client.id, this.getClientUserId(client));
       client.leave(`channel:${data.channelId}`);
       return this.success(true);
