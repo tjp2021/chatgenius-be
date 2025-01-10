@@ -1,13 +1,22 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Query } from '@nestjs/common';
 import { UserService } from './user.service';
 import { ClerkGuard } from '../../shared/guards/clerk.guard';
 import { User } from '../../shared/decorators/user.decorator';
 import { User as UserType } from '../../core/events/event.types';
+import { SearchUsersDto } from './dto/search-users.dto';
 
 @Controller('users')
 @UseGuards(ClerkGuard)
 export class UserController {
   constructor(private readonly userService: UserService) {}
+
+  @Get('search')
+  async searchUsers(
+    @User('id') userId: string,
+    @Query() query: SearchUsersDto,
+  ) {
+    return this.userService.searchUsers(userId, query);
+  }
 
   @Post()
   async createUser(

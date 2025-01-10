@@ -3,6 +3,7 @@ import { PrismaService } from '../../core/database/prisma.service';
 import { EventService } from '../../core/events/event.service';
 import { User } from '../../core/events/event.types';
 import { Prisma } from '@prisma/client';
+import { SearchUsersDto } from './dto/search-users.dto';
 
 @Injectable()
 export class UserService {
@@ -12,6 +13,54 @@ export class UserService {
     private prisma: PrismaService,
     private events: EventService,
   ) {}
+
+  async searchUsers(currentUserId: string, query: SearchUsersDto) {
+    const { search = '', page = 1, limit = 10 } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.UserWhereInput = {
+      AND: [
+        { id: { not: currentUserId } }, // Exclude current user
+        {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+          ],
+        },
+      ],
+    };
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          imageUrl: true,
+          isOnline: true,
+        },
+        orderBy: [
+          { isOnline: 'desc' }, // Online users first
+          { name: 'asc' },      // Then alphabetically
+        ],
+        skip,
+        take: limit,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      users: users.map(user => ({
+        ...user,
+      })),
+      pagination: {
+        total,
+        page,
+        limit,
+        hasMore: skip + users.length < total,
+      },
+    };
+  }
 
   async createUser(data: { 
     id: string; 
