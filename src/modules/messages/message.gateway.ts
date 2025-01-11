@@ -1,19 +1,15 @@
 import { WebSocketGateway, SubscribeMessage, MessageBody, ConnectedSocket } from '@nestjs/websockets';
-import { Socket } from 'socket.io';
 import { MessageEvent } from './dto/message-events.enum';
 import { MessageService } from './message.service';
 import { BaseGateway } from '../../core/ws/base.gateway';
 import { EventService } from '../../core/events/event.service';
 import { AuthenticatedSocket } from '../../shared/types/ws.types';
+import { Logger } from '@nestjs/common';
 
-@WebSocketGateway({
-  cors: {
-    origin: process.env.FRONTEND_URL,
-    credentials: true
-  },
-  transports: ['websocket']
-})
+@WebSocketGateway()
 export class MessageGateway extends BaseGateway {
+  protected readonly logger = new Logger(MessageGateway.name);
+
   constructor(
     private readonly messageService: MessageService,
     protected readonly eventService: EventService
@@ -22,29 +18,42 @@ export class MessageGateway extends BaseGateway {
   }
 
   async handleConnection(client: AuthenticatedSocket) {
-    await super.handleConnection(client);
-    
-    // Get user's channels and join their rooms
-    const userId = this.getClientUserId(client);
-    if (userId) {
+    try {
+      // First handle base connection logic
+      await super.handleConnection(client);
+      
+      const userId = this.getClientUserId(client);
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
+
+      // Get user's channels and subscribe to them via EventService
       const channels = await this.messageService.getUserChannels(userId);
-      channels.forEach(channel => {
-        client.join(`channel:${channel.id}`);
-        this.eventService.subscribe(channel.id, client.id, userId);
-      });
+      await Promise.all(channels.map(async channel => {
+        await this.eventService.subscribe(channel.id, client.id, userId);
+      }));
+
+      this.logger.debug(`Client ${client.id} connected and subscribed to ${channels.length} channels`);
+    } catch (error) {
+      this.logger.error('Error in handleConnection:', error);
+      client.emit('error', this.error(error.message));
+      client.disconnect();
     }
   }
 
   async handleDisconnect(client: AuthenticatedSocket) {
-    const userId = this.getClientUserId(client);
-    if (userId) {
-      const channels = await this.messageService.getUserChannels(userId);
-      channels.forEach(channel => {
-        this.eventService.unsubscribe(channel.id, client.id, userId);
-        client.leave(`channel:${channel.id}`);
-      });
+    try {
+      const userId = this.getClientUserId(client);
+      if (userId) {
+        const channels = await this.messageService.getUserChannels(userId);
+        await Promise.all(channels.map(async channel => {
+          await this.eventService.unsubscribe(channel.id, client.id, userId);
+        }));
+      }
+      await super.handleDisconnect(client);
+    } catch (error) {
+      this.logger.error('Error in handleDisconnect:', error);
     }
-    await super.handleDisconnect(client);
   }
 
   @SubscribeMessage(MessageEvent.SEND)
@@ -53,26 +62,28 @@ export class MessageGateway extends BaseGateway {
     @MessageBody() data: { channelId: string; content: string }
   ) {
     try {
-      // Get user ID from socket
       const userId = this.getClientUserId(client);
       if (!userId) {
         throw new Error('User not authenticated');
       }
 
-      // Ensure client is in the channel room
-      if (!client.rooms.has(`channel:${data.channelId}`)) {
-        client.join(`channel:${data.channelId}`);
-        this.eventService.subscribe(data.channelId, client.id, userId);
+      // Verify channel subscription
+      if (!this.eventService.isSubscribed(data.channelId, userId)) {
+        await this.eventService.subscribe(data.channelId, client.id, userId);
       }
 
-      // Create message
+      // Create and broadcast message
       const message = await this.messageService.create(userId, {
         channelId: data.channelId,
         content: data.content
       });
 
+      // Emit to channel via EventService
+      this.eventService.emit(data.channelId, MessageEvent.NEW, message);
+
       return this.success(message);
     } catch (error) {
+      this.logger.error('Error in handleSendMessage:', error);
       return this.error(error.message);
     }
   }
@@ -88,9 +99,22 @@ export class MessageGateway extends BaseGateway {
         throw new Error('User not authenticated');
       }
 
+      // Mark as delivered (this updates the delivery status)
       await this.messageService.markAsDelivered(data.messageId, userId);
+
+      // Get the message to emit the update
+      const message = await this.messageService.findById(data.messageId);
+      if (message) {
+        this.eventService.emit(message.channelId, 'message:status', {
+          messageId: message.id,
+          status: 'delivered',
+          userId
+        });
+      }
+
       return this.success(true);
     } catch (error) {
+      this.logger.error('Error in handleMessageDelivered:', error);
       return this.error(error.message);
     }
   }
@@ -106,9 +130,22 @@ export class MessageGateway extends BaseGateway {
         throw new Error('User not authenticated');
       }
 
+      // Mark as seen (this updates the delivery status)
       await this.messageService.markAsSeen(data.messageId, userId);
+
+      // Get the message to emit the update
+      const message = await this.messageService.findById(data.messageId);
+      if (message) {
+        this.eventService.emit(message.channelId, 'message:status', {
+          messageId: message.id,
+          status: 'read',
+          userId
+        });
+      }
+
       return this.success(true);
     } catch (error) {
+      this.logger.error('Error in handleMessageRead:', error);
       return this.error(error.message);
     }
   }

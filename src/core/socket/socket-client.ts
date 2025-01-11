@@ -80,7 +80,21 @@ export class SocketClient extends EventEmitter {
       reconnectionDelay: this.RECONNECT_DELAY,
       reconnectionAttempts: this.MAX_RECONNECT_ATTEMPTS,
       timeout: this.CONNECT_TIMEOUT,
-      autoConnect: false
+      autoConnect: false,
+      withCredentials: true
+    });
+
+    // Add connection state logging
+    this.socket.io.on("error", (error) => {
+      console.error("Socket.IO error:", error);
+    });
+
+    this.socket.io.on("reconnect_attempt", () => {
+      console.log("Socket.IO attempting reconnect...");
+    });
+
+    this.socket.io.on("ping", () => {
+      console.log("Socket.IO ping...");
     });
 
     this.setupEventHandlers();

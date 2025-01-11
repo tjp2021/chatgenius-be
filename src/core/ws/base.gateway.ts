@@ -2,16 +2,20 @@ import { WebSocketGateway as NestGateway, WebSocketServer, OnGatewayConnection, 
 import { Server } from 'socket.io';
 import { EventService } from '../events/event.service';
 import { AuthenticatedSocket } from '../../shared/types/ws.types';
-import { Logger } from '@nestjs/common';
+import { Injectable, Logger, UseGuards } from '@nestjs/common';
 import { clerkClient } from '@clerk/clerk-sdk-node';
+import { WsGuard } from '../../shared/guards/ws.guard';
 
+@Injectable()
+@UseGuards(WsGuard)
 @NestGateway({
   cors: {
-    origin: process.env.FRONTEND_URL,
+    origin: [process.env.FRONTEND_URL, process.env.FRONTEND_URL?.replace('http', 'ws')],
     credentials: true,
     allowedHeaders: ['Authorization', 'Content-Type'],
   },
   transports: ['websocket'],
+  path: '/api/socket/io'
 })
 export class BaseGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -37,14 +41,25 @@ export class BaseGateway implements OnGatewayConnection, OnGatewayDisconnect {
   protected async authenticateClient(client: AuthenticatedSocket): Promise<boolean> {
     const timestamp = new Date().toISOString();
     try {
-      this.logger.debug(`[${timestamp}] 🔌 Authenticating client`, {
-        id: client.id,
-        handshakeAuth: client.handshake.auth
+      this.logger.debug(`[${timestamp}] 🔌 Authentication attempt`, {
+        clientId: client.id,
+        ipAddress: client.handshake.address,
+        userAgent: client.handshake.headers['user-agent'],
+        timestamp: new Date().toISOString()
       });
 
-      const token = client.handshake.auth.token;
+      // Try to get token from different sources
+      const token = 
+        client.handshake.auth?.token || 
+        client.handshake.headers?.authorization?.replace('Bearer ', '') ||
+        client.handshake.query?.token;
+
       if (!token) {
-        this.logger.error(`[${timestamp}] ❌ No token provided`);
+        this.logger.warn(`[${timestamp}] ❌ Authentication failed: No token provided`, {
+          clientId: client.id,
+          ipAddress: client.handshake.address,
+          timestamp: new Date().toISOString()
+        });
         return false;
       }
 
@@ -52,7 +67,11 @@ export class BaseGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const verifyResult = await clerkClient.verifyToken(token);
       
       if (!verifyResult.sub) {
-        this.logger.error(`[${timestamp}] ❌ Invalid token - no sub claim`);
+        this.logger.warn(`[${timestamp}] ❌ Authentication failed: Invalid token`, {
+          clientId: client.id,
+          ipAddress: client.handshake.address,
+          timestamp: new Date().toISOString()
+        });
         return false;
       }
 
@@ -60,16 +79,21 @@ export class BaseGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.userId = verifyResult.sub;
       client.user = { id: verifyResult.sub };
 
-      this.logger.debug(`[${timestamp}] ✅ Client authenticated successfully`, {
-        socketId: client.id,
-        userId: client.userId
+      this.logger.log(`[${timestamp}] ✅ Authentication successful`, {
+        clientId: client.id,
+        userId: client.userId,
+        ipAddress: client.handshake.address,
+        timestamp: new Date().toISOString()
       });
 
       return true;
     } catch (error) {
-      this.logger.error(`[${timestamp}] 💥 Authentication failed:`, {
+      this.logger.error(`[${timestamp}] 💥 Authentication error`, {
+        clientId: client.id,
+        ipAddress: client.handshake.address,
         error: error.message,
-        stack: error.stack
+        stack: error.stack,
+        timestamp: new Date().toISOString()
       });
       return false;
     }
@@ -94,21 +118,38 @@ export class BaseGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const timestamp = new Date().toISOString();
     this.logger.debug(`[${timestamp}] 🔌 New client connection`, {
       id: client.id,
-      handshakeAuth: client.handshake.auth
+      handshakeAuth: client.handshake.auth,
+      userId: client.userId,
+      user: client.user,
+      headers: client.handshake.headers,
+      query: client.handshake.query
     });
 
-    // First authenticate
-    const isAuthenticated = await this.authenticateClient(client);
-    if (!isAuthenticated) {
-      this.logger.error(`[${timestamp}] ❌ Authentication failed`);
-      client.emit('error', { message: 'Authentication failed' });
-      client.disconnect();
-      return;
+    // Check if WsGuard has already authenticated the client
+    if (client.userId && client.user?.id) {
+      this.logger.debug(`[${timestamp}] ✅ Client pre-authenticated by WsGuard`, {
+        id: client.id,
+        userId: client.userId
+      });
+    } else {
+      // Fallback to our own authentication
+      const isAuthenticated = await this.authenticateClient(client);
+      if (!isAuthenticated) {
+        this.logger.error(`[${timestamp}] ❌ Authentication failed`);
+        client.emit('error', { message: 'Authentication failed' });
+        client.disconnect();
+        return;
+      }
     }
 
     // Then validate the authenticated socket
     if (!this.validateClient(client)) {
-      this.logger.error(`[${timestamp}] ❌ Validation failed`);
+      this.logger.error(`[${timestamp}] ❌ Validation failed`, {
+        hasUserId: !!client.userId,
+        userId: client.userId,
+        hasUser: !!client.user,
+        userObject: client.user
+      });
       client.emit('error', { message: 'Validation failed' });
       client.disconnect();
       return;
@@ -116,7 +157,8 @@ export class BaseGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     this.logger.debug(`[${timestamp}] ✅ Client connected and authenticated`, {
       id: client.id,
-      userId: client.userId
+      userId: client.userId,
+      userObject: client.user
     });
   }
 

@@ -1,13 +1,17 @@
-import { SubscribeMessage, MessageBody } from '@nestjs/websockets';
+import { SubscribeMessage, MessageBody, ConnectedSocket } from '@nestjs/websockets';
 import { Injectable } from '@nestjs/common';
 import { BaseGateway } from '../../core/ws/base.gateway';
 import { EventService } from '../../core/events/event.service';
 import { ChannelService } from './channel.service';
 import { AuthenticatedSocket } from '../../shared/types/ws.types';
 import { CreateChannelDto, UpdateChannelDto, MemberRole } from './channel.types';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class ChannelGateway extends BaseGateway {
+  protected readonly logger = new Logger(ChannelGateway.name);
+
   constructor(
     protected readonly eventService: EventService,
     private readonly channelService: ChannelService,
@@ -15,83 +19,24 @@ export class ChannelGateway extends BaseGateway {
     super(eventService);
   }
 
-  @SubscribeMessage('createChannel')
+  @SubscribeMessage('channel:create')
   async handleCreateChannel(
     client: AuthenticatedSocket,
-    @MessageBody() payload: CreateChannelDto & { memberIds?: string[] } & { data?: any },
+    @MessageBody() payload: CreateChannelDto,
   ) {
-    const timestamp = new Date().toISOString();
-    console.log('=============== GATEWAY CREATE START ===============');
-    console.log('STEP 1: Raw Payload:', {
-      payload,
-      type: typeof payload,
-      keys: Object.keys(payload)
-    });
-
     try {
-      if (!this.validateClient(client)) {
-        console.error(`[${timestamp}] ❌ Client validation failed`);
-        return this.error('Unauthorized');
-      }
-
-      console.log('STEP 2: Checking payload structure:', {
-        hasDataProp: 'data' in payload,
-        dataType: payload.data ? typeof payload.data : 'no data prop',
-        memberIdsInPayload: 'memberIds' in payload,
-        memberIdsInData: payload.data && 'memberIds' in payload.data,
-        payloadMemberIds: payload.memberIds,
-        dataMemberIds: payload.data?.memberIds
-      });
-
-      // Extract memberIds from the correct location
-      let memberIds: string[] = [];
-      if ('memberIds' in payload) {
-        memberIds = payload.memberIds || [];
-      } else if (payload.data && 'memberIds' in payload.data) {
-        memberIds = payload.data.memberIds || [];
-      }
-
-      console.log('STEP 3: Extracted memberIds:', { memberIds });
-      
-      // Create clean payload without memberIds
-      const cleanPayload: CreateChannelDto = {
-        name: payload.name || payload.data?.name,
-        type: payload.type || payload.data?.type,
-        description: payload.description || payload.data?.description || "",
-        ...(payload.targetUserId && { targetUserId: payload.targetUserId })
-      };
-
-      console.log('STEP 4: Final data for service:', {
-        cleanPayload,
-        memberIds
-      });
-
       const channel = await this.channelService.createChannel(
-        client.userId,
-        cleanPayload,
-        memberIds
+        this.getClientUserId(client),
+        payload,
+        payload.memberIds
       );
-
-      console.log('STEP 5: Service Response:', {
-        channelId: channel.id,
-        type: channel.type,
-        memberCount: channel.memberCount
-      });
-      console.log('=============== GATEWAY CREATE END ===============');
-
       return this.success(channel);
     } catch (error) {
-      console.error('STEP X: Error in gateway:', {
-        error: error.message,
-        stack: error.stack,
-        payload
-      });
-      console.log('=============== GATEWAY CREATE ERROR ===============');
       return this.error(error.message);
     }
   }
 
-  @SubscribeMessage('updateChannel')
+  @SubscribeMessage('channel:update')
   async handleUpdateChannel(
     client: AuthenticatedSocket,
     @MessageBody() payload: UpdateChannelDto,
@@ -108,37 +53,128 @@ export class ChannelGateway extends BaseGateway {
     }
   }
 
-  @SubscribeMessage('joinChannel')
+  @SubscribeMessage('channel:join')
   async handleJoinChannel(
-    client: AuthenticatedSocket,
+    @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: { channelId: string },
   ) {
+    const userId = client.userId;
+    if (!userId) {
+      this.logger.error('No userId found on socket');
+      return this.error('UNAUTHORIZED');
+    }
+
+    const { channelId } = data;
+
     try {
-      await this.channelService.joinChannel(this.getClientUserId(client), data.channelId);
-      this.eventService.subscribe(data.channelId, client.id, this.getClientUserId(client));
-      client.join(`channel:${data.channelId}`);
-      return this.success(true);
+      this.logger.debug(`Join attempt for channel ${channelId} by user ${userId}`);
+
+      // Check if channel exists and is public
+      const channel = await this.channelService.getChannel(userId, channelId).catch(err => {
+        if (err instanceof ForbiddenException) {
+          // Ignore forbidden exception as user might not be a member yet
+          return null;
+        }
+        throw err;
+      });
+
+      // If channel exists and user is already a member
+      if (channel) {
+        this.logger.debug(`User ${userId} is already a member of channel ${channelId}`);
+        await this.joinChannelRoom(client, channelId);
+        return this.success(channel);
+      }
+
+      // Not a member, try to join
+      this.logger.debug(`Attempting to add user ${userId} to channel ${channelId}`);
+      await this.channelService.joinChannel(userId, channelId);
+      await this.joinChannelRoom(client, channelId);
+      
+      // Get updated channel data
+      const updatedChannel = await this.channelService.getChannel(userId, channelId);
+      
+      this.logger.debug(`Successfully joined channel ${channelId}`);
+      return this.success(updatedChannel);
     } catch (error) {
-      return this.error(error.message);
+      this.logger.error(`Channel join failed: ${error.message}`, {
+        userId,
+        channelId,
+        error
+      });
+
+      // Return appropriate error response
+      if (error instanceof ForbiddenException) {
+        return this.error('ALREADY_MEMBER');
+      } else if (error instanceof NotFoundException) {
+        return this.error('CHANNEL_NOT_FOUND');
+      } else {
+        return this.error('JOIN_FAILED');
+      }
     }
   }
 
-  @SubscribeMessage('leaveChannel')
+  // Helper method to handle socket room join
+  private async joinChannelRoom(client: AuthenticatedSocket, channelId: string) {
+    const userId = this.getClientUserId(client);
+    
+    try {
+      // Subscribe to events first
+      await this.eventService.subscribe(channelId, client.id, userId);
+      
+      // Then join the socket room
+      await client.join(`channel:${channelId}`);
+      
+      // Emit member count update
+      const channel = await this.channelService.getChannel(userId, channelId);
+      await this.server.to(`channel:${channelId}`).emit('channel:member_count', {
+        channelId,
+        count: channel.memberCount
+      });
+    } catch (error) {
+      this.logger.error(`Failed to join channel room: ${error.message}`, {
+        userId,
+        channelId,
+        error
+      });
+      throw error; // Propagate error to main handler
+    }
+  }
+
+  @SubscribeMessage('channel:leave')
   async handleLeaveChannel(
     client: AuthenticatedSocket,
     @MessageBody() data: { channelId: string; shouldDelete?: boolean },
   ) {
+    const userId = this.getClientUserId(client);
+    const { channelId, shouldDelete } = data;
+
     try {
-      await this.channelService.leaveChannel(this.getClientUserId(client), data.channelId, data.shouldDelete);
-      this.eventService.unsubscribe(data.channelId, client.id, this.getClientUserId(client));
-      client.leave(`channel:${data.channelId}`);
+      await this.channelService.leaveChannel(userId, channelId, shouldDelete);
+      
+      // Cleanup socket room and subscriptions
+      this.eventService.unsubscribe(channelId, client.id, userId);
+      await client.leave(`channel:${channelId}`);
+      
+      // Emit member count update
+      const channel = await this.channelService.getChannel(userId, channelId);
+      this.server.to(`channel:${channelId}`).emit('channel:member_count', {
+        channelId,
+        count: channel.memberCount
+      });
+
       return this.success(true);
     } catch (error) {
+      this.logger.error(`Channel leave failed: ${error.message}`, {
+        userId,
+        channelId,
+        error
+      });
+
       return this.error(error.message);
     }
   }
 
-  @SubscribeMessage('updateMemberRole')
+  @SubscribeMessage('channel:member:role')
   async handleUpdateMemberRole(
     client: AuthenticatedSocket,
     @MessageBody() data: { channelId: string; userId: string; role: MemberRole },

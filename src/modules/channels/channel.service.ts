@@ -121,8 +121,11 @@ export class ChannelService {
 
     const newMember = await this.repository.addMember(channelId, userId, 'MEMBER');
     
-    // Emit member joined event
-    this.events.emit(channelId, 'channel.member_joined', {
+    // Get updated channel for member count
+    const updatedChannel = await this.repository.findById(channelId);
+    
+    // Emit member joined event with colon format
+    this.events.emit(channelId, 'channel:member_joined', {
       channelId,
       member: {
         userId,
@@ -130,6 +133,12 @@ export class ChannelService {
         role: newMember.role,
         joinedAt: newMember.joinedAt,
       },
+    });
+
+    // Emit member count update
+    this.events.emit(channelId, 'channel:member_count', {
+      channelId,
+      count: updatedChannel.memberCount
     });
   }
 

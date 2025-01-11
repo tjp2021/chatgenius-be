@@ -1,534 +1,162 @@
 {
   "projectName": "SOA Chat Application",
-  "description": "A service-oriented architecture chat application featuring real-time chat, AI-powered interactions, and systematic documentation of development and debugging processes.",
+  "description": "This is a nestjs backend api that is part of a service-oriented architecture chat application featuring real-time chat, AI-powered interactions, and systematic documentation of development and debugging processes.",
   "rules": {
-    "deduceCommand": {
-      "trigger": "Run deduce",
-      "description": "Analyzes the context window to deduce error sources and create an implementation plan for debugging",
-      "workflow": {
-        "contextAnalysis": {
-          "steps": [
-            "Review all prior solution attempts",
-            "Identify patterns in failed solutions",
-            "Map dependencies and interactions",
-            "Isolate common failure points"
-          ]
-        },
-        "deductiveReasoning": {
-          "process": [
-            "Process of elimination",
-            "Chain of thought reasoning",
-            "Logical deduction",
-            "Pattern recognition"
-          ],
-          "output": {
-            "format": "markdown",
-            "sections": [
+    "developmentGuidelines": {
+      "codeQualityPrinciples": {
+        "description": "Core principles that must be followed in all code development",
+        "principles": [
+          {
+            "name": "DRY (Don't Repeat Yourself)",
+            "description": "Code must not contain duplicated logic or implementations",
+            "requirements": [
+              "Extract repeated code into reusable functions or classes",
+              "Use shared utilities for common operations",
+              "Implement proper inheritance and composition patterns",
+              "Create shared interfaces and types for repeated structures"
+            ]
+          },
+          {
+            "name": "SOLID Principles",
+            "description": "All code must adhere to SOLID principles",
+            "principles": [
               {
-                "title": "Error Pattern Analysis",
-                "content": [
-                  "Identified patterns in errors",
-                  "Common triggers or conditions",
-                  "Environmental factors"
-                ]
+                "name": "Single Responsibility",
+                "description": "Each class/module should have only one reason to change"
               },
               {
-                "title": "Code Area Risk Analysis",
-                "content": [
-                  "High-risk areas identified",
-                  "Risk level assessment",
-                  "Impact evaluation",
-                  "Probability rating"
-                ]
+                "name": "Open/Closed",
+                "description": "Software entities should be open for extension but closed for modification"
               },
               {
-                "title": "Solution Candidates",
-                "content": [
-                  "Potential solutions ranked by likelihood",
-                  "Implementation complexity",
-                  "Risk mitigation strategies",
-                  "Expected outcomes"
-                ]
+                "name": "Liskov Substitution",
+                "description": "Derived classes must be substitutable for their base classes"
+              },
+              {
+                "name": "Interface Segregation",
+                "description": "Clients should not be forced to depend on interfaces they don't use"
+              },
+              {
+                "name": "Dependency Inversion",
+                "description": "Depend on abstractions, not concretions"
               }
             ]
-          }
-        },
-        "implementationPlan": {
-          "sections": [
-            {
-              "title": "Investigation Steps",
-              "template": "1. {step description}\n   - Expected outcome: {outcome}\n   - Verification method: {method}\n   - Risk level: {risk}"
-            },
-            {
-              "title": "Solution Approach",
-              "template": "1. {approach description}\n   - Implementation complexity: {complexity}\n   - Required changes: {changes}\n   - Validation steps: {validation}"
-            },
-            {
-              "title": "Fallback Strategy",
-              "template": "1. {strategy description}\n   - Trigger conditions: {conditions}\n   - Recovery steps: {steps}\n   - Validation: {validation}"
-            }
-          ]
-        }
-      },
-      "output": {
-        "format": "markdown",
-        "template": "# Deductive Analysis [CG-{YYYYMMDD}-{sequential_number}]\n\n## Error Pattern Analysis\n{patterns}\n\n## Risk Analysis\n{risks}\n\n## Solution Candidates\n{solutions}\n\n## Implementation Plan\n{plan}\n\n---"
-      }
-    },
-    "paslCommand": {
-      "trigger": "Run PASL",
-      "description": "Executes a complete Problem Analysis, Solution Attempts, Final Solution, and Lessons Learned cycle",
-      "sequence": [
-        {
-          "step": "Problem Analysis",
-          "template": "Problem Analysis [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Issue Description**: {description}\n- **Symptoms**: {observed behavior}\n- **Impact**: {what's affected}\n- **Initial Investigation**: {first findings}\n- **Root Cause Hypotheses**: {possible causes}"
-        },
-        {
-          "step": "Solution Attempts",
-          "template": "Solution Attempts [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Attempt 1**: {description}\n  - Result: {outcome}\n  - Learnings: {what we discovered}\n- **Attempt 2**: {description}\n  - Result: {outcome}\n  - Learnings: {what we discovered}"
-        },
-        {
-          "step": "Final Solution",
-          "template": "Final Solution [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Solution Description**: {what was done}\n- **Implementation Details**: {how it was done}\n- **Verification**: {how we confirmed it worked}\n- **Side Effects**: {any implications}"
-        },
-        {
-          "step": "Lessons Learned",
-          "template": "Lessons Learned [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Technical Insights**: {what we learned about the system}\n- **Process Improvements**: {what we could do better}\n- **Prevention Strategies**: {how to avoid similar issues}\n- **Documentation Updates**: {what needs to be updated}"
-        }
-      ],
-      "output": {
-        "format": "markdown",
-        "divider": "==================================================================",
-        "autoSave": false
-      }
-    },
-    "contextWindowLogging": {
-      "enabled": true,
-      "action": "Document the prompt and relevant files in Brainlift.md only when explicitly commanded with 'Add to Brainlift.md'",
-      "command": "Add to Brainlift.md",
-      "format": {
-        "entry": "Context Window: \n\nPrompt: {enter prompt here}\nRelevant Files: {list all files here}\n\n---"
-      }
-    },
-    "debuggingWorkflow": {
-      "identifierSystem": {
-        "format": "CG-{YYYYMMDD}-{sequential_number}",
-        "description": "Each analysis cycle gets a unique identifier that links its problem analysis, solution, and lessons",
-        "example": "CG-20231218-001",
-        "usage": "Include at the start of problem analysis, solution walkthrough, and learning lessons"
-      },
-      "integrationFlow": {
-        "steps": [
-          {
-            "trigger": "Issue detected",
-            "action": "Run deduce",
-            "output": "Active analysis plan"
           },
           {
-            "trigger": "Solution implementation",
-            "action": "Run PASL",
-            "output": "Documentation entry"
+            "name": "KISS (Keep It Simple, Stupid)",
+            "description": "Code should be as simple as possible, avoiding unnecessary complexity",
+            "requirements": [
+              "Write straightforward, easy-to-understand code",
+              "Avoid over-engineering solutions",
+              "Break complex problems into smaller, manageable pieces",
+              "Use clear, descriptive naming conventions"
+            ]
           },
           {
-            "trigger": "Knowledge capture",
-            "action": "Add to Brainlift.md",
-            "output": "Permanent record"
+            "name": "YAGNI (You Aren't Gonna Need It)",
+            "description": "Only implement features that are needed now, not what might be needed in the future",
+            "requirements": [
+              "Avoid speculative programming",
+              "Focus on current requirements",
+              "Refactor when new requirements arise",
+              "Don't build features 'just in case'"
+            ]
+          },
+          {
+            "name": "Fail Fast",
+            "description": "Detect and report failures as soon as possible in the development cycle",
+            "requirements": [
+              "Implement comprehensive error handling",
+              "Use strong typing and validation",
+              "Add meaningful error messages",
+              "Validate inputs early in the process"
+            ]
+          },
+          {
+            "name": "Clean Code",
+            "description": "Code should be readable, maintainable, and testable",
+            "requirements": [
+              "Use meaningful variable and function names",
+              "Keep functions small and focused",
+              "Write self-documenting code",
+              "Include proper comments for complex logic",
+              "Follow consistent formatting and style"
+            ]
+          },
+          {
+            "name": "Separation of Concerns",
+            "description": "Different aspects of the application should be separated into distinct sections",
+            "requirements": [
+              "Separate business logic from presentation logic",
+              "Use proper layering (controllers, services, repositories)",
+              "Keep WebSocket events separate from HTTP endpoints",
+              "Maintain clear boundaries between different modules"
+            ]
+          },
+          {
+            "name": "Defensive Programming",
+            "description": "Anticipate and handle potential errors and edge cases",
+            "requirements": [
+              "Validate all inputs and parameters",
+              "Handle all possible error scenarios",
+              "Implement proper type checking",
+              "Add logging for debugging and monitoring",
+              "Use try-catch blocks appropriately"
+            ]
           }
         ],
-        "linkage": {
-          "method": "Use same CG-ID across all related entries",
-          "purpose": "Maintain traceability between analysis and documentation"
-        }
-      },
-      "commandUsage": {
-        "deduce": {
-          "when": "During active debugging",
-          "purpose": "Plan and execute solution",
-          "output": "Action plan"
-        },
-        "pasl": {
-          "when": "After solution implementation",
-          "purpose": "Document process and learnings",
-          "output": "Knowledge entry"
-        },
-        "brainlift": {
-          "when": "After PASL completion",
-          "purpose": "Permanent knowledge capture",
-          "output": "Searchable documentation"
-        }
-      }
-    },
-    "narrowScope": {
-      "principles": ["DRY", "SRP"],
-      "prohibitedActions": ["Overwriting irrelevant code", "Generating unnecessary files", "Hallucinating code snippets"],
-      "requiredActions": ["Ensure all code has a clear purpose", "Explicitly link every action to the context window"]
-    },
-    "brainliftIntegration": {
-      "goal": "Use Brainlift.md as a single source of truth for documenting development progress, debugging, and solutions, but only when explicitly requested.",
-      "guidelines": [
-        "Only add to Brainlift.md when explicitly commanded with 'Add to Brainlift.md'",
-        "Use markdown formatting for clarity and future reference",
-        "After each complete analysis cycle (problem analysis + solution walkthrough + learning lessons), add a divider:",
-        "=================================================================="
-      ],
-      "analysisCycle": {
-        "sequence": [
-          "Problem Analysis [ID]",
-          "Solution Walkthrough [ID]",
-          "Learning Lessons [ID]",
-          "Divider"
-        ],
-        "divider": "=================================================================="
-      },
-      "dividerOrganization": {
-        "description": "Rules for organizing content using dividers in Brainlift.md",
-        "rules": [
-          "New content should be added immediately after the most recent divider (===)",
-          "Each addition should be followed by a new divider line",
-          "Divider format should be exactly 66 equals signs: =================================================================="
-        ],
-        "workflow": {
-          "addContent": [
-            "1. Locate the most recent divider in Brainlift.md",
-            "2. Add new content directly underneath it",
-            "3. Add a new divider line after the content"
-          ],
-          "dividerFormat": {
-            "pattern": "==================================================================",
-            "length": 66,
-            "usage": "Used to separate distinct entries and analysis cycles"
-          }
-        }
-      },
-      "entryTypes": {
-        "deduceEntry": {
-          "format": "# Deductive Analysis [CG-{ID}]\n{content}\n\n---",
-          "required": ["errorAnalysis", "riskAssessment", "solutionPlan"]
-        },
-        "paslEntry": {
-          "format": "# PASL Documentation [CG-{ID}]\n{content}\n\n---",
-          "required": ["problem", "attempts", "solution", "lessons"]
-        }
-      },
-      "linking": {
-        "crossReferences": {
-          "format": "Related: [CG-{ID}]",
-          "types": ["deduce-to-pasl", "pasl-to-deduce", "issue-to-issue"]
-        },
-        "tags": {
-          "format": "#tag-name",
-          "categories": ["error-type", "component", "severity"]
-        }
-      }
-    },
-    "developmentGuidelines": {
-      "socketCommunication": {
-        "rules": [
-          "Never mix HTTP state changes with WebSocket real-time updates",
-          "Always validate authentication at both connection and message level",
-          "Implement proper reconnection and error handling strategies",
-          "Use clear event naming conventions and payload structures"
-        ],
-        "bestPractices": {
-          "authentication": "Validate at connection and message level",
-          "eventNaming": "Use consistent patterns like 'entity:action' (e.g., 'message:send')",
-          "errorHandling": "Implement systematic reconnection and error recovery"
-        }
-      },
-      "stateManagement": {
-        "rules": [
-          "Keep a single source of truth (server-side)",
-          "Avoid complex client-side cache manipulation",
-          "Use simple, predictable socket event handlers",
-          "Implement clear data invalidation strategies"
-        ],
-        "bestPractices": {
-          "caching": "Simple, predictable invalidation patterns",
-          "stateFlow": "One-way data flow from server to client",
-          "updates": "Use WebSocket events for real-time UI updates"
-        }
-      },
-      "channelManagement": {
-        "rules": [
-          "Separate membership management (HTTP) from real-time updates (WebSocket)",
-          "Implement proper cache invalidation for both channel list and membership status",
-          "Use WebSocket events for real-time UI updates",
-          "Handle race conditions between operations"
-        ],
-        "bestPractices": {
-          "membership": "HTTP endpoints for state changes",
-          "updates": "WebSocket events for real-time notifications",
-          "caching": "Invalidate both list and membership caches"
-        }
-      },
-      "messageHandling": {
-        "rules": [
-          "Implement proper message delivery confirmation",
-          "Handle offline messages using a queue system",
-          "Use typing indicators correctly",
-          "Maintain clear message state transitions"
-        ],
-        "bestPractices": {
-          "delivery": "Implement acknowledgment system",
-          "offline": "Queue messages for offline users",
-          "typing": "Use debounced typing indicators",
-          "state": "Clear transition states (sending → sent → delivered)"
-        }
-      },
-      "developmentProcess": {
-        "rules": [
-          "Follow systematic debugging with unique identifiers",
-          "Document all significant changes and lessons",
-          "Implement comprehensive testing for new features",
-          "Keep code changes focused and well-documented"
-        ],
-        "bestPractices": {
-          "debugging": "Use CG-{YYYYMMDD}-{sequential_number} format",
-          "documentation": "Update relevant documentation with changes",
-          "testing": "Add tests for new features and bug fixes",
-          "codeQuality": "Keep changes focused and maintainable"
-        }
-      }
-    },
-    "documentCommand": {
-      "trigger": "Run doc",
-      "description": "Generates or updates extremely detailed technical documentation with strict accuracy checks",
-      "categories": {
-        "api": {
-          "required": [
-            "endpoint",
-            "method",
-            "protocol",
-            "port",
-            "baseUrl",
-            "headers",
-            "authentication",
-            "request_payload",
-            "response_payload",
-            "error_responses",
-            "example_requests",
-            "example_responses"
-          ],
-          "template": {
-            "endpoint": {
-              "path": "string (full path including base)",
-              "method": "HTTP method",
-              "protocol": "HTTP/HTTPS",
-              "port": "number (development and production)",
-              "authentication": {
-                "type": "Bearer/Clerk/etc",
-                "token_location": "header/query/body",
-                "example": "actual example with proper format"
-              }
-            },
-            "request": {
-              "headers": ["required headers with examples"],
-              "payload": {
-                "type": "application/json",
-                "schema": "TypeScript interface",
-                "example": "complete example",
-                "validation": ["all validation rules"]
-              }
-            },
-            "response": {
-              "success": {
-                "status": "number",
-                "schema": "TypeScript interface",
-                "example": "complete example"
-              },
-              "errors": [{
-                "status": "number",
-                "condition": "when this error occurs",
-                "response": "error response format"
-              }]
-            }
-          }
-        },
-        "websocket": {
-          "required": [
-            "event_name",
-            "direction",
-            "authentication",
-            "payload",
-            "response",
-            "error_handling",
-            "sequence_diagram"
-          ],
-          "template": {
-            "connection": {
-              "url": "WebSocket URL with port",
-              "protocol": "ws/wss",
-              "authentication": {
-                "type": "type of auth",
-                "token_format": "exact format required",
-                "example": "complete example"
-              }
-            },
-            "events": {
-              "name": "event name",
-              "direction": "client->server/server->client/bidirectional",
-              "payload": {
-                "schema": "TypeScript interface",
-                "validation": ["validation rules"],
-                "example": "complete example"
-              },
-              "response": {
-                "schema": "TypeScript interface",
-                "example": "complete example"
-              },
-              "error_handling": {
-                "error_types": ["possible errors"],
-                "recovery": "recovery strategy",
-                "client_handling": "how client should handle"
-              }
-            },
-            "sequence": {
-              "normal_flow": ["ordered steps"],
-              "error_flow": ["error handling steps"],
-              "reconnection": ["reconnection steps"]
-            }
-          }
-        },
-        "database": {
-          "required": [
-            "model",
-            "fields",
-            "relations",
-            "indexes",
-            "constraints",
-            "update_patterns"
-          ],
-          "template": {
-            "model": {
-              "name": "model name",
-              "schema": "complete Prisma schema",
-              "indexes": ["all indexes"],
-              "constraints": ["all constraints"]
-            },
-            "operations": {
-              "create": {
-                "structure": "correct data structure",
-                "example": "complete example",
-                "validation": ["validation rules"]
-              },
-              "update": {
-                "structure": "correct nested update structure",
-                "example": "complete example with nested data",
-                "common_patterns": ["documented update patterns"]
-              },
-              "relations": {
-                "type": "1-1/1-n/n-n",
-                "foreign_keys": ["documented keys"],
-                "cascade": "cascade behavior"
-              }
-            }
-          }
-        },
-        "authentication": {
-          "required": [
-            "flow",
-            "token_handling",
-            "validation_points",
-            "error_handling"
-          ],
-          "template": {
-            "flow": {
-              "steps": ["ordered authentication steps"],
-              "sequence": "detailed sequence diagram",
-              "validation_points": ["all validation checks"]
-            },
-            "tokens": {
-              "type": "token type",
-              "format": "exact format",
-              "location": "where token should be",
-              "validation": "how token is validated"
-            },
-            "errors": {
-              "types": ["all possible errors"],
-              "handling": ["how each error is handled"],
-              "recovery": ["recovery strategies"]
-            }
-          }
-        }
-      },
-      "output": {
-        "format": "markdown",
         "validation": {
           "required": true,
-          "rules": [
-            "All required fields must be filled",
-            "Examples must be actual working code",
-            "No placeholders allowed",
-            "Must include error scenarios",
-            "Must include sequence diagrams for flows"
-          ]
-        },
-        "template": "# {Category} Documentation\n\n## Overview\n{description}\n\n## Details\n{details}\n\n## Examples\n{examples}\n\n## Error Handling\n{errors}\n\n## Sequence Diagrams\n{diagrams}\n\n---"
+          "onGeneration": "Must verify code follows DRY and SOLID principles",
+          "onModification": "Must ensure changes maintain DRY and SOLID compliance"
+        }
       },
-      "sanityCheck": {
-        "trigger": "sanity check",
-        "description": "Performs a thorough second-pass verification of the generated documentation",
-        "verificationSteps": [
+      "antiPatterns": {
+        "description": "These patterns are strictly forbidden and must never be generated",
+        "forbidden": [
           {
-            "step": "Accuracy Verification",
-            "checks": [
-              "Cross-reference with actual code implementation",
-              "Verify all endpoints, methods, and parameters",
-              "Confirm protocol and port specifications",
-              "Validate authentication flow accuracy",
-              "Check all TypeScript interfaces match codebase"
-            ]
+            "pattern": "Multiple Authentication Points",
+            "description": "Authentication must only happen in WsGuard and BaseGateway",
+            "example": "Checking auth tokens in multiple gateways or services",
+            "prevention": "Always use WsGuard and BaseGateway authentication"
           },
           {
-            "step": "Completeness Check",
-            "checks": [
-              "Ensure no missing error scenarios",
-              "Verify all edge cases are documented",
-              "Confirm all required fields are filled",
-              "Check sequence diagrams cover all flows",
-              "Validate example completeness"
-            ]
+            "pattern": "Direct Socket Access Outside Gateways",
+            "description": "Socket operations must only occur in gateway classes",
+            "example": "Accessing socket instance in services",
+            "prevention": "Use EventService for all socket communications"
           },
           {
-            "step": "Consistency Validation",
-            "checks": [
-              "Check naming consistency across documentation",
-              "Verify type definitions are consistent",
-              "Confirm error handling patterns are uniform",
-              "Validate event naming conventions",
-              "Check payload structure consistency"
-            ]
+            "pattern": "Mixing HTTP and Socket State Changes",
+            "description": "Keep HTTP state changes separate from WebSocket updates",
+            "example": "Emitting socket events from HTTP controllers",
+            "prevention": "Use proper event emission through EventService"
           },
           {
-            "step": "Implementation Verification",
-            "checks": [
-              "Test all documented examples",
-              "Verify error responses match implementation",
-              "Confirm authentication flows are accurate",
-              "Check database operations match Prisma schema",
-              "Validate WebSocket event implementations"
-            ]
+            "pattern": "Global State in Socket Instances",
+            "description": "No storing state directly on socket instances",
+            "example": "socket.data = { globalState: {} }",
+            "prevention": "Use proper state management services"
+          },
+          {
+            "pattern": "Lack of Error Handling",
+            "description": "All socket operations must have proper error handling",
+            "example": "Missing try-catch blocks in socket handlers",
+            "prevention": "Always implement comprehensive error handling"
+          },
+          {
+            "pattern": "Synchronous Blocking Operations",
+            "description": "No blocking operations in socket handlers",
+            "example": "Using while loops or synchronous operations",
+            "prevention": "Use async/await and proper Promise handling"
           }
         ],
-        "output": {
-          "format": "markdown",
-          "template": "# Sanity Check Report [CG-{YYYYMMDD}-{sequential_number}]\n\n## Verification Results\n\n{results}\n\n## Identified Issues\n\n{issues}\n\n## Recommended Updates\n\n{updates}\n\n## Confidence Level\n\n{confidence}\n\n---"
+        "validation": {
+          "required": true,
+          "onGeneration": "Must verify no anti-patterns are present in generated code",
+          "onModification": "Must verify changes don't introduce anti-patterns"
         }
       }
-    }
-  },
-  "examples": {
-    "contextWindowEntryCommand": "Add to Brainlift.md",
-    "problemAnalysisCommand": "Add to Brainlift.md",
-    "solutionWalkthroughCommand": "Add to Brainlift.md",
-    "learningLessonsCommand": "Add to Brainlift.md",
-    "contextWindowEntry": "Context Window: \n\nPrompt: Summarize the project architecture.\nRelevant Files: chatgenius-prd.md, implementation-plan (1).md\n\n---",
-    "problemAnalysisEntry": "Problem Analysis [CG-20231218-001]\n\n- **ID**: CG-20231218-001\n- **Error Description**: API not responding.\n- **Root Cause Hypotheses**: Network latency, incorrect API key.\n- **Steps to Reproduce**: Call endpoint with key X.\n- **Logs or Relevant Information**: {add details}\n\n---",
-    "solutionWalkthroughEntry": "Solution Walkthrough [CG-20231218-001]\n\n- **ID**: CG-20231218-001\n- **Solution Description**: Corrected API key in environment variables.\n- **Why It Worked**: The wrong key was causing authentication failure.\n- **Key Lessons**: Always double-check environment variable settings.\n\n---",
-    "learningLessonsEntry": "Learning Lessons [CG-20231218-001]\n\n- **ID**: CG-20231218-001\n- **Pattern Recognition**: Incomplete API endpoint updates across components\n- **Prevention Strategies**: Implement systematic dependency checking\n- **Best Practices Learned**: Update all related components when changing APIs\n- **Future Recommendations**: Create automated tests for API consistency\n\n==================================================================",
-    "deduceAnalysisExample": {
-      "header": "Deductive Analysis [CG-20231218-002]",
-      "content": "## Error Pattern Analysis\n- Pattern 1: Connection drops after authentication\n- Pattern 2: Intermittent token validation failures\n\n## Risk Analysis\n1. **High Risk**: Token validation logic (90% probability)\n   - Impact: Authentication failures\n   - Affected areas: All authenticated requests\n\n## Solution Candidates\n1. **Token Validation Fix**\n   - Complexity: Medium\n   - Implementation: Update validation logic\n   - Expected outcome: Stable connections\n\n## Implementation Plan\n1. Investigate token validation\n2. Add logging checkpoints\n3. Implement fix\n4. Validate solution"
     }
   }
 }

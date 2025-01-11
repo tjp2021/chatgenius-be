@@ -10,67 +10,59 @@ export class WsGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const timestamp = new Date().toISOString();
     try {
-      this.logger.debug(`[${timestamp}] 🔍 WsGuard.canActivate called`);
+      this.logger.debug(`[${timestamp}] 🔍 WsGuard.canActivate called for ${context.getClass().name}`);
       
       const client = context.switchToWs().getClient<Socket>();
-      this.logger.debug(`[${timestamp}] 📡 Socket client:`, { 
+      this.logger.debug(`[${timestamp}] 📡 Socket client connected:`, { 
         id: client.id,
-        handshake: {
-          auth: client.handshake.auth,
-          query: client.handshake.query,
-          headers: client.handshake.headers
+        auth: client.handshake.auth?.token ? 'present' : 'missing',
+        headers: {
+          authorization: client.handshake.headers?.authorization ? 'present' : 'missing'
         }
       });
 
-      const token = client.handshake.auth.token;
-      this.logger.debug(`[${timestamp}] 🎟️ Auth token received:`, { 
-        hasToken: !!token,
-        tokenPrefix: token ? token.substring(0, 20) + '...' : 'NO_TOKEN'
-      });
+      // Try to get token from different sources
+      const authToken = client.handshake.auth?.token;
+      const headerToken = client.handshake.headers?.authorization?.replace('Bearer ', '');
+      const queryToken = client.handshake.query?.token;
+      
+      const token = authToken || headerToken || queryToken;
       
       if (!token) {
         this.logger.error(`[${timestamp}] ❌ No token provided in socket handshake`);
         return false;
       }
 
-      this.logger.debug(`[${timestamp}] 🔐 Attempting to verify token with Clerk...`);
-      
-      // Verify the JWT token with Clerk
-      const verifyResult = await clerkClient.verifyToken(token);
-      this.logger.debug(`[${timestamp}] ✅ Token verification result:`, {
-        hasSubject: !!verifyResult.sub,
-        subject: verifyResult.sub,
-        sessionId: verifyResult.sid,
-        fullResult: verifyResult
-      });
-      
-      if (!verifyResult.sub) {
-        this.logger.error(`[${timestamp}] ❌ Invalid token or no sub (userId) in verified token`);
+      try {
+        // Verify the JWT token with Clerk
+        const verifyResult = await clerkClient.verifyToken(token);
+        
+        if (!verifyResult.sub) {
+          this.logger.error(`[${timestamp}] ❌ Invalid token or no sub (userId) in verified token`);
+          return false;
+        }
+
+        const socket = client as AuthenticatedSocket;
+        socket.userId = verifyResult.sub;
+        socket.user = { id: verifyResult.sub };
+        
+        this.logger.debug(`[${timestamp}] 🔓 Socket authenticated:`, { 
+          userId: verifyResult.sub,
+          socketId: socket.id
+        });
+
+        return true;
+      } catch (verifyError) {
+        this.logger.error(`[${timestamp}] ❌ Token verification failed:`, {
+          error: verifyError.message,
+          code: verifyError.code
+        });
         return false;
       }
-
-      const socket = client as AuthenticatedSocket;
-      socket.userId = verifyResult.sub;
-      socket.user = { id: verifyResult.sub };
-      
-      this.logger.debug(`[${timestamp}] 🔓 Socket authenticated successfully`, { 
-        userId: verifyResult.sub,
-        socketId: socket.id,
-        handshakeAuth: socket.handshake.auth,
-        userDataSet: {
-          hasUserId: !!socket.userId,
-          hasUserObject: !!socket.user,
-          userIdMatch: socket.userId === socket.user?.id
-        }
-      });
-
-      return true;
     } catch (error) {
       this.logger.error(`[${timestamp}] 💥 Socket authentication failed:`, {
         error: error.message,
-        stack: error.stack,
-        name: error.name,
-        code: error.code
+        context: context.getClass().name
       });
       return false;
     }

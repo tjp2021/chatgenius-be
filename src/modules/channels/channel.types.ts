@@ -10,6 +10,7 @@ export interface CreateChannelDto {
   description?: string;
   type: ChannelType;
   targetUserId?: string;  // Only used for DM channels
+  memberIds?: string[];  // Optional array of member IDs for private channels
 }
 
 export interface UpdateChannelDto {

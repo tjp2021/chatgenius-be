@@ -202,6 +202,22 @@ export class RedisCacheService implements OnModuleDestroy {
     })) || [];
   }
 
+  // Batch Operations for Message Delivery
+  async setMessageDeliveryStatusesBatch(
+    updates: Array<{ messageId: string; recipientId: string; status: string }>
+  ): Promise<void> {
+    if (!this.isEnabled) return;
+    
+    const pipeline = this.redis?.pipeline();
+    
+    for (const { messageId, recipientId, status } of updates) {
+      const key = `message:delivery:${messageId}:${recipientId}`;
+      pipeline?.set(key, status, 'EX', 86400);
+    }
+    
+    await pipeline?.exec();
+  }
+
   // Pattern Matching Methods
   async getKeysByPattern(pattern: string): Promise<string[]> {
     if (!this.isEnabled) return [];

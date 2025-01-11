@@ -13,7 +13,7 @@ Problem Analysis [CG-20240108-001]
   1. Log in to the application
   2. Open the browse channels modal
   3. Observe empty lists despite being a member of channels
-  4. Check network tab showing undefinedUserId in requests
+  4. Check network tab showing undefined userId in requests
 - **Logs or Relevant Information**:
   ```log
   Getting public channels with options: {
@@ -976,263 +976,27 @@ Final Solution [CG-20240111-006]
 Lessons Learned [CG-20240111-006]
 
 - **Technical Insights**: 
-  1. Socket.IO needs comprehensive operational support
-  2. Performance requirements are as critical as functionality
-  3. Resource management is essential for stability
-  4. Monitoring is crucial for production readiness
+  1. Socket.IO implementation needs clear architecture
+  2. Authentication should have single source of truth
+  3. Room management should be centralized
+  4. Gateway hierarchy should be clear
 
 - **Process Improvements**: 
-  1. Include performance requirements in initial design
-  2. Implement monitoring from the start
-  3. Define resource limits early
-  4. Create comprehensive error handling strategy
+  1. Regular code audits for redundancy
+  2. Clear ownership of socket functionality
+  3. Better documentation of architecture decisions
+  4. Regular cleanup of deprecated code
 
 - **Prevention Strategies**: 
-  1. Regular performance testing
-  2. Resource usage monitoring
-  3. Error rate tracking
-  4. Health check implementation
+  1. Create architecture diagram for socket system
+  2. Document clear responsibilities for each component
+  3. Implement automated tests to prevent regression
+  4. Regular code review focusing on redundancy
 
 - **Documentation Updates**: 
-  1. Add performance requirements
-  2. Document monitoring setup
-  3. Create error handling guide
-  4. Add operational procedures
-
-==================================================================
-
-Problem Analysis [CG-20240111-007]
-- **Issue Description**: After reviewing Socket.IO PRD, our socket implementation has significant gaps beyond just redundancy
-- **Symptoms**: 
-  1. Missing critical performance requirements
-     - No connection limits defined
-     - No latency monitoring
-     - No resource usage tracking
-  2. Incomplete error handling
-     - No proper error hierarchy
-     - Missing recovery strategies
-     - No error rate monitoring
-  3. Insufficient resource management
-     - No memory per connection limits
-     - Missing connection pooling
-     - No room limits enforcement
-  4. Lack of monitoring and metrics
-     - No performance metrics collection
-     - Missing alert conditions
-     - No systematic logging
-- **Impact**: 
-  1. Potential system instability under load
-  2. Unpredictable error scenarios
-  3. Resource leaks
-  4. No visibility into system health
-- **Initial Investigation**: 
-  1. Compared current implementation with PRD requirements
-  2. Found significant gaps in performance monitoring
-  3. Identified missing error handling patterns
-  4. Discovered resource management issues
-- **Root Cause Hypotheses**: 
-  1. Focus on functionality over operational requirements
-  2. Missing performance requirements in initial design
-  3. Incomplete error handling strategy
-  4. No monitoring framework defined
-
-Solution Attempts [CG-20240111-007]
-
-- **Attempt 1**: Review Current Performance
-  ```typescript
-  // Current implementation lacks performance constraints
-  @WebSocketGateway()
-  export class WsGateway {
-    // No connection limits
-    // No performance monitoring
-    // No resource tracking
-    async handleConnection(client: Socket) {
-      // Basic connection handling only
-    }
-  }
-  ```
-  - Result: Need to add performance monitoring and limits
-  - Learnings: Must implement PRD's performance requirements
-
-- **Attempt 2**: Analyze Error Handling
-  ```typescript
-  // Current error handling is basic
-  @SubscribeMessage('event')
-  handleEvent() {
-    try {
-      // Basic try-catch
-    } catch (error) {
-      // Simple error emission
-      client.emit('error', error.message);
-    }
-  }
-  ```
-  - Result: Need comprehensive error handling system
-  - Learnings: Should implement PRD's error hierarchy
-
-- **Attempt 3**: Check Resource Management
-  ```typescript
-  // Current resource management is minimal
-  export class EventService {
-    // No connection pooling
-    // No room limits
-    // No cleanup strategies
-  }
-  ```
-  - Result: Need proper resource management
-  - Learnings: Must implement PRD's resource constraints
-
-Final Solution [CG-20240111-007]
-
-- **Solution Description**: Implement comprehensive Socket.IO system following PRD requirements
-- **Implementation Details**: 
-  1. Add Performance Monitoring:
-     ```typescript
-     @Injectable()
-     export class SocketMetricsService {
-       private readonly metrics = {
-         connections: new Gauge(),
-         messageLatency: new Histogram(),
-         roomSize: new Gauge(),
-         errorRate: new Counter()
-       };
-
-       trackConnection(client: Socket) {
-         this.metrics.connections.inc();
-         // Track connection establishment time
-         // Monitor resource usage
-       }
-
-       trackMessage(latency: number) {
-         this.metrics.messageLatency.observe(latency);
-       }
-     }
-     ```
-
-  2. Implement Error Handling:
-     ```typescript
-     export class SocketError extends Error {
-       constructor(
-         public code: string,
-         public status: number,
-         message: string
-       ) {
-         super(message);
-       }
-     }
-
-     @Injectable()
-     export class SocketErrorHandler {
-       handleError(client: Socket, error: Error): void {
-         if (error instanceof AuthenticationError) {
-           client.emit('error', { type: 'auth', message: error.message });
-           client.disconnect();
-           return;
-         }
-
-         if (error instanceof RateLimitError) {
-           client.emit('error', { 
-             type: 'rateLimit', 
-             message: error.message,
-             retryAfter: error.retryAfter 
-           });
-           return;
-         }
-       }
-     }
-     ```
-
-  3. Add Resource Management:
-     ```typescript
-     @Injectable()
-     export class ResourceManager {
-       private readonly MAX_CONNECTIONS = 10000;
-       private readonly MAX_ROOMS_PER_INSTANCE = 5000;
-       private readonly MAX_MEMORY_PER_CONNECTION = 50 * 1024; // 50KB
-
-       async canAcceptConnection(): Promise<boolean> {
-         const currentConnections = await this.getConnectionCount();
-         const memoryUsage = process.memoryUsage();
-         
-         return currentConnections < this.MAX_CONNECTIONS &&
-                this.hasMemoryCapacity(memoryUsage);
-       }
-
-       async canJoinRoom(roomId: string): Promise<boolean> {
-         const currentRooms = await this.getRoomCount();
-         return currentRooms < this.MAX_ROOMS_PER_INSTANCE;
-       }
-     }
-     ```
-
-  4. Implement Monitoring:
-     ```typescript
-     @Injectable()
-     export class SocketMonitor {
-       private readonly ALERT_THRESHOLDS = {
-         errorRate: 0.01, // 1%
-         latency: 100, // ms
-         connectionSpike: 100, // per second
-         memoryUsage: 0.85 // 85%
-       };
-
-       async checkHealth(): Promise<HealthStatus> {
-         const metrics = await this.gatherMetrics();
-         return this.evaluateHealth(metrics);
-       }
-
-       private async evaluateHealth(metrics: Metrics): Promise<HealthStatus> {
-         // Implement health checks based on PRD requirements
-         // Return detailed health status
-       }
-     }
-     ```
-
-- **Verification**: 
-  1. Performance meets PRD requirements
-     - Connection time < 1000ms
-     - Reconnection time < 2000ms
-     - Event latency < 100ms
-  2. Resource usage within limits
-     - Memory per connection < 50KB
-     - CPU usage < 70%
-  3. Error handling comprehensive
-     - All error types handled
-     - Recovery strategies in place
-  4. Monitoring system active
-     - Metrics being collected
-     - Alerts configured
-
-- **Side Effects**: 
-  1. Better system stability
-  2. Predictable performance
-  3. Early warning system
-  4. Resource protection
-
-Lessons Learned [CG-20240111-007]
-
-- **Technical Insights**: 
-  1. Socket.IO needs comprehensive operational support
-  2. Performance requirements are as critical as functionality
-  3. Resource management is essential for stability
-  4. Monitoring is crucial for production readiness
-
-- **Process Improvements**: 
-  1. Include performance requirements in initial design
-  2. Implement monitoring from the start
-  3. Define resource limits early
-  4. Create comprehensive error handling strategy
-
-- **Prevention Strategies**: 
-  1. Regular performance testing
-  2. Resource usage monitoring
-  3. Error rate tracking
-  4. Health check implementation
-
-- **Documentation Updates**: 
-  1. Add performance requirements
-  2. Document monitoring setup
-  3. Create error handling guide
-  4. Add operational procedures
+  1. Create socket architecture guide
+  2. Document authentication flow
+  3. Document room management patterns
+  4. Update API documentation to reflect changes
 
 ==================================================================

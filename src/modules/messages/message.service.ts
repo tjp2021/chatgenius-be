@@ -29,73 +29,83 @@ export class MessageService {
   }
 
   async create(userId: string, data: { channelId: string; content: string }) {
-    // Check if user is member of channel
-    const member = await this.prisma.channelMember.findUnique({
-      where: {
-        channelId_userId: {
+    try {
+      this.logger.debug(`Creating message for channel ${data.channelId} from user ${userId}`);
+
+      // Critical path: Only check membership and create message
+      const member = await this.prisma.channelMember.findUnique({
+        where: {
+          channelId_userId: {
+            channelId: data.channelId,
+            userId,
+          },
+        },
+      });
+
+      if (!member) {
+        throw new ForbiddenException('Not a member of this channel');
+      }
+
+      // Create message
+      const message = await this.prisma.message.create({
+        data: {
+          content: data.content,
           channelId: data.channelId,
           userId,
         },
-      },
-    });
-
-    if (!member) {
-      throw new ForbiddenException('Not a member of this channel');
-    }
-
-    // Get channel members for delivery tracking
-    const channelMembers = await this.prisma.channelMember.findMany({
-      where: { channelId: data.channelId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            isOnline: true,
-          },
+        include: {
+          user: true,
         },
-      },
-    });
+      });
 
-    // Create message
-    const message = await this.prisma.message.create({
-      data: {
-        content: data.content,
-        channelId: data.channelId,
-        userId,
-      },
-      include: {
-        user: true,
-      },
-    });
+      // Non-critical operations: Run in background
+      setImmediate(async () => {
+        try {
+          const channelMembers = await this.prisma.channelMember.findMany({
+            where: { channelId: data.channelId },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  isOnline: true,
+                },
+              },
+            },
+          });
 
-    // Initialize delivery tracking for all channel members except sender
-    const recipientIds = channelMembers
-      .map(m => m.userId)
-      .filter(id => id !== userId);
-    
-    await this.deliveryService.initializeDelivery(message.id, recipientIds);
+          const recipientIds = channelMembers
+            .map(m => m.userId)
+            .filter(id => id !== userId);
 
-    // Queue message for offline users
-    const offlineMembers = channelMembers.filter(
-      member => member.userId !== userId && !member.user.isOnline
-    );
+          const offlineMembers = channelMembers.filter(
+            member => member.userId !== userId && !member.user.isOnline
+          );
 
-    await Promise.all(
-      offlineMembers.map(member =>
-        this.offlineMessageService.queueMessageForOfflineUser(member.userId, message)
-      )
-    );
+          await Promise.all([
+            // Initialize delivery tracking
+            this.deliveryService.initializeDelivery(message.id, recipientIds),
+            
+            // Queue offline messages
+            ...offlineMembers.map(member =>
+              this.offlineMessageService.queueMessageForOfflineUser(member.userId, message)
+            )
+          ]);
 
-    // Emit message created event with delivery status
-    await this.eventService.emitToChannel(data.channelId, 'message.created', {
-      ...message,
-      deliveryStatus: MessageDeliveryStatus.SENT,
-    });
+          this.logger.debug(`Background tasks completed for message ${message.id}`);
+        } catch (error) {
+          this.logger.error('Error in background tasks:', error);
+          // Non-critical errors don't affect the message send response
+        }
+      });
 
-    return {
-      ...message,
-      deliveryStatus: MessageDeliveryStatus.SENT,
-    };
+      return {
+        ...message,
+        deliveryStatus: MessageDeliveryStatus.SENT,
+      };
+    } catch (error) {
+      this.logger.error('Error in create message:', error);
+      throw error;
+    }
   }
 
   async update(messageId: string, userId: string, content: string) {
