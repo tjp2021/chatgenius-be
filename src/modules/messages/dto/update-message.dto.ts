@@ -1,6 +1,7 @@
-import { IsString } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 
 export class UpdateMessageDto {
   @IsString()
-  content: string;
+  @IsOptional()
+  content?: string;
 } 

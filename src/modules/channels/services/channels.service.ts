@@ -1,9 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../lib/prisma.service';
 import { CreateChannelDto } from '../dto/create-channel.dto';
 import { UpdateChannelDto } from '../dto/update-channel.dto';
 import { ChannelQuery } from '../types/channel.types';
-import { ChannelType } from '@prisma/client';
+import { ChannelType, MemberRole } from '@prisma/client';
 
 @Injectable()
 export class ChannelsService {
@@ -54,23 +54,69 @@ export class ChannelsService {
   }
 
   async createChannel(userId: string, createChannelDto: CreateChannelDto) {
-    return this.prisma.channel.create({
-      data: {
-        name: createChannelDto.name,
-        description: createChannelDto.description,
-        type: createChannelDto.type,
-        createdById: userId,
-        members: {
-          create: {
-            userId,
-            role: 'OWNER',
+    // First verify the user exists
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    // If memberIds are provided, verify they exist
+    if (createChannelDto.memberIds?.length) {
+      const members = await this.prisma.user.findMany({
+        where: {
+          id: {
+            in: createChannelDto.memberIds,
           },
         },
-      },
-      include: {
-        members: true,
-      },
-    });
+      });
+
+      if (members.length !== createChannelDto.memberIds.length) {
+        throw new NotFoundException('One or more specified members do not exist');
+      }
+    }
+
+    try {
+      return await this.prisma.channel.create({
+        data: {
+          name: createChannelDto.name,
+          description: createChannelDto.description,
+          type: createChannelDto.type,
+          createdById: userId,
+          members: {
+            create: [
+              {
+                userId,
+                role: MemberRole.OWNER,
+              },
+              ...(createChannelDto.memberIds?.map(memberId => ({
+                userId: memberId,
+                role: MemberRole.MEMBER,
+              })) || []),
+            ],
+          },
+        },
+        include: {
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  imageUrl: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    } catch (error) {
+      // Handle any other potential database errors
+      throw new Error(`Failed to create channel: ${error.message}`);
+    }
   }
 
   async updateChannel(userId: string, channelId: string, updateChannelDto: UpdateChannelDto) {

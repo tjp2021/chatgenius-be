@@ -32,4 +32,67 @@ export class UsersService {
       where: { id: userId }
     });
   }
+
+  async searchUsers(query: string, currentUserId: string) {
+    console.log('Searching users with query:', query);
+    console.log('Current user ID to exclude:', currentUserId);
+    
+    if (!query?.trim()) {
+      console.log('Empty query, returning empty array');
+      return [];
+    }
+
+    // First get all users to verify data
+    const allUsers = await this.prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      }
+    });
+    console.log('All users in database:', JSON.stringify(allUsers, null, 2));
+
+    // Normalize the search query
+    const normalizedQuery = query.trim().toLowerCase();
+    console.log('Normalized query:', normalizedQuery);
+
+    const results = await this.prisma.user.findMany({
+      where: {
+        AND: [
+          {
+            OR: [
+              { 
+                name: { 
+                  contains: normalizedQuery,
+                  mode: 'insensitive'
+                } 
+              },
+              { 
+                email: { 
+                  contains: normalizedQuery,
+                  mode: 'insensitive'
+                } 
+              }
+            ]
+          },
+          {
+            id: {
+              not: currentUserId
+            }
+          }
+        ]
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        imageUrl: true,
+        isOnline: true
+      }
+    });
+
+    console.log('Current user ID that was excluded:', currentUserId);
+    console.log('Search results:', JSON.stringify(results, null, 2));
+    return results;
+  }
 } 

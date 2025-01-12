@@ -10,9 +10,6 @@ async function bootstrap() {
   // Enable validation
   app.useGlobalPipes(new ValidationPipe());
 
-  // Set global prefix
-  app.setGlobalPrefix('api');
-
   // Configure WebSocket adapter with explicit settings
   const ioAdapter = new IoAdapter(app);
   app.useWebSocketAdapter(ioAdapter);

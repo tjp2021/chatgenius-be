@@ -4,6 +4,9 @@ export class CreateMessageDto {
   @IsString()
   content: string;
 
+  @IsUUID()
+  channelId: string;
+
   @IsOptional()
   @IsUUID()
   replyToId?: string;

@@ -1,38 +1,41 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { ChannelsService } from '../services/channels.service';
 import { CreateChannelDto } from '../dto/create-channel.dto';
 import { UpdateChannelDto } from '../dto/update-channel.dto';
 import { ChannelQuery } from '../types/channel.types';
+import { ClerkAuthGuard } from '../../../guards/clerk-auth.guard';
 
 @Controller('channels')
+@UseGuards(ClerkAuthGuard)
 export class ChannelsController {
   constructor(private readonly channelsService: ChannelsService) {}
 
   @Get()
-  async getChannels(@Query() query: ChannelQuery) {
-    return this.channelsService.getChannels('test-user', query); // TODO: Get real user ID from auth
+  async getChannels(@Req() req: any, @Query() query: ChannelQuery) {
+    return this.channelsService.getChannels(req.auth.userId, query);
   }
 
   @Get(':id')
-  async getChannel(@Param('id') id: string) {
-    return this.channelsService.getChannel('test-user', id); // TODO: Get real user ID from auth
+  async getChannel(@Req() req: any, @Param('id') id: string) {
+    return this.channelsService.getChannel(req.auth.userId, id);
   }
 
   @Post()
-  async createChannel(@Body() createChannelDto: CreateChannelDto) {
-    return this.channelsService.createChannel('test-user', createChannelDto); // TODO: Get real user ID from auth
+  async createChannel(@Req() req: any, @Body() createChannelDto: CreateChannelDto) {
+    return this.channelsService.createChannel(req.auth.userId, createChannelDto);
   }
 
   @Put(':id')
   async updateChannel(
+    @Req() req: any,
     @Param('id') id: string,
     @Body() updateChannelDto: UpdateChannelDto,
   ) {
-    return this.channelsService.updateChannel('test-user', id, updateChannelDto); // TODO: Get real user ID from auth
+    return this.channelsService.updateChannel(req.auth.userId, id, updateChannelDto);
   }
 
   @Delete(':id')
-  async deleteChannel(@Param('id') id: string) {
-    return this.channelsService.deleteChannel('test-user', id); // TODO: Get real user ID from auth
+  async deleteChannel(@Req() req: any, @Param('id') id: string) {
+    return this.channelsService.deleteChannel(req.auth.userId, id);
   }
 } 
