@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../lib/prisma.service';
 import { CreateChannelDto } from '../dto/create-channel.dto';
 import { UpdateChannelDto } from '../dto/update-channel.dto';
@@ -63,7 +63,110 @@ export class ChannelsService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    // If memberIds are provided, verify they exist
+    // Special handling for DM channels
+    if (createChannelDto.type === ChannelType.DM) {
+      if (!createChannelDto.targetUserId) {
+        throw new BadRequestException('targetUserId is required for DM channels');
+      }
+
+      // Prevent creating DM with yourself
+      if (userId === createChannelDto.targetUserId) {
+        throw new BadRequestException('Cannot create a DM channel with yourself');
+      }
+
+      // Check if target user exists
+      const targetUser = await this.prisma.user.findUnique({
+        where: { id: createChannelDto.targetUserId },
+      });
+
+      if (!targetUser) {
+        throw new NotFoundException(`Target user with ID ${createChannelDto.targetUserId} not found`);
+      }
+
+      // Check if DM channel already exists between these users
+      const existingDM = await this.prisma.channel.findFirst({
+        where: {
+          type: ChannelType.DM,
+          AND: [
+            {
+              members: {
+                some: {
+                  userId,
+                },
+              },
+            },
+            {
+              members: {
+                some: {
+                  userId: createChannelDto.targetUserId,
+                },
+              },
+            },
+          ],
+        },
+        include: {
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  imageUrl: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (existingDM) {
+        console.log('Found existing DM channel:', existingDM);
+        return existingDM;
+      }
+
+      // Create new DM channel
+      const dmName = `${user.name}, ${targetUser.name}`;
+      try {
+        return await this.prisma.channel.create({
+          data: {
+            name: dmName,
+            type: ChannelType.DM,
+            createdById: userId,
+            members: {
+              create: [
+                {
+                  userId,
+                  role: MemberRole.OWNER,
+                },
+                {
+                  userId: createChannelDto.targetUserId,
+                  role: MemberRole.MEMBER,
+                },
+              ],
+            },
+          },
+          include: {
+            members: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    imageUrl: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+      } catch (error) {
+        throw new Error(`Failed to create DM channel: ${error.message}`);
+      }
+    }
+
+    // Regular channel creation logic
     if (createChannelDto.memberIds?.length) {
       const members = await this.prisma.user.findMany({
         where: {
@@ -114,7 +217,6 @@ export class ChannelsService {
         },
       });
     } catch (error) {
-      // Handle any other potential database errors
       throw new Error(`Failed to create channel: ${error.message}`);
     }
   }
