@@ -4,6 +4,21 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 
+class CustomIoAdapter extends IoAdapter {
+  createIOServer(port: number, options?: any) {
+    const server = super.createIOServer(port, {
+      ...options,
+      cors: {
+        origin: '*',
+        credentials: true
+      },
+      path: '/socket.io',
+      transports: ['websocket', 'polling']
+    });
+    return server;
+  }
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -11,7 +26,7 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe());
 
   // Configure WebSocket adapter with explicit settings
-  const ioAdapter = new IoAdapter(app);
+  const ioAdapter = new CustomIoAdapter(app);
   app.useWebSocketAdapter(ioAdapter);
 
   // Enable CORS - make it very permissive for testing
@@ -32,7 +47,9 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
+  // Start server
   await app.listen(3002);
   console.log('Server running on http://localhost:3002');
+  console.log('WebSocket server running on ws://localhost:3002/api');
 }
 bootstrap();
