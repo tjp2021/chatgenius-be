@@ -43,4 +43,9 @@ export class ChannelsController {
   async leaveChannel(@Req() req: any, @Param('id') id: string) {
     return this.channelsService.removeMember(req.auth.userId, id);
   }
+
+  @Post(':id/join')
+  async joinChannel(@Req() req: any, @Param('id') id: string) {
+    return this.channelsService.addMember(id, req.auth.userId, 'MEMBER');
+  }
 } 

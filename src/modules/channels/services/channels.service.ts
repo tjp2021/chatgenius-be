@@ -10,17 +10,107 @@ export class ChannelsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getChannels(userId: string, query: ChannelQuery) {
+    if (!query.view) {
+      throw new BadRequestException('view parameter is required');
+    }
+
+    switch (query.view) {
+      case 'sidebar':
+        return this.getSidebarChannels(userId);
+      case 'browse':
+        return this.getBrowseChannels(userId);
+      case 'leave':
+        return this.getLeaveChannels(userId);
+      default:
+        throw new BadRequestException(`Invalid view type: ${query.view}`);
+    }
+  }
+
+  private async getSidebarChannels(userId: string) {
+    // Get public channels where user is a member
+    return this.prisma.channel.findMany({
+      where: {
+        AND: [
+          { type: ChannelType.PUBLIC },
+          { members: { some: { userId } } }
+        ]
+      },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            messages: true,
+            members: true,
+          },
+        },
+      },
+    });
+  }
+
+  private async getBrowseChannels(userId: string) {
+    // Get all public channels and mark membership
+    const channels = await this.prisma.channel.findMany({
+      where: {
+        type: ChannelType.PUBLIC,
+      },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            messages: true,
+            members: true,
+          },
+        },
+      },
+    });
+
+    // Add isJoined flag for each channel
+    return channels.map(channel => ({
+      ...channel,
+      isJoined: channel.members.some(member => member.userId === userId)
+    }));
+  }
+
+  private async getLeaveChannels(userId: string) {
+    // Get all channels (public, private, DM) where user is a member
     return this.prisma.channel.findMany({
       where: {
         members: {
-          some: {
-            userId,
-          },
-        },
-        ...(query.type && { type: query.type }),
+          some: { userId }
+        }
       },
       include: {
-        members: true,
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
         _count: {
           select: {
             messages: true,
@@ -32,17 +122,22 @@ export class ChannelsService {
   }
 
   async getChannel(userId: string, channelId: string) {
-    return this.prisma.channel.findFirst({
+    const channel = await this.prisma.channel.findUnique({
       where: {
         id: channelId,
-        members: {
-          some: {
-            userId,
-          },
-        },
       },
       include: {
-        members: true,
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
         _count: {
           select: {
             messages: true,
@@ -51,6 +146,23 @@ export class ChannelsService {
         },
       },
     });
+
+    if (!channel) {
+      throw new NotFoundException('Channel not found');
+    }
+
+    // Check if user is a member
+    const isJoined = channel.members.some(member => member.userId === userId);
+
+    // For private/DM channels, only allow access if user is a member
+    if (channel.type !== 'PUBLIC' && !isJoined) {
+      throw new NotFoundException('Channel not found');
+    }
+
+    return {
+      ...channel,
+      isJoined
+    };
   }
 
   async createChannel(userId: string, createChannelDto: CreateChannelDto) {
@@ -367,5 +479,51 @@ export class ChannelsService {
     } catch (error) {
       throw new Error(`Failed to delete channel: ${error.message}`);
     }
+  }
+
+  async addMember(channelId: string, userId: string, role: MemberRole) {
+    // Check if channel exists
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+      include: { members: true }
+    });
+
+    if (!channel) {
+      throw new NotFoundException('Channel not found');
+    }
+
+    // Check if user is already a member
+    const existingMember = channel.members.find(member => member.userId === userId);
+    if (existingMember) {
+      throw new BadRequestException('User is already a member of this channel');
+    }
+
+    // Add member to channel
+    const updatedChannel = await this.prisma.channel.update({
+      where: { id: channelId },
+      data: {
+        members: {
+          create: {
+            userId,
+            role
+          }
+        }
+      },
+      include: {
+        members: {
+          include: {
+            user: true
+          }
+        },
+        _count: {
+          select: {
+            members: true,
+            messages: true
+          }
+        }
+      }
+    });
+
+    return updatedChannel;
   }
 } 

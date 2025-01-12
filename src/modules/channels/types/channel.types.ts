@@ -2,7 +2,7 @@ import { Channel, ChannelMember, ChannelType, MemberRole } from '@prisma/client'
 
 // Query types
 export interface ChannelQuery {
-  type?: ChannelType;
+  view?: 'sidebar' | 'browse' | 'leave';
   search?: string;
   cursor?: string;
   limit?: number;
