@@ -14,6 +14,7 @@ import { WsAuthGuard } from '../guards/ws-auth.guard';
 import { ChannelsService } from '../../channels/services/channels.service';
 import { WebsocketService } from '../services/websocket.service';
 import { UsersService } from '../../users/services/users.service';
+import { MessagesService } from '../../messages/services/messages.service';
 import {
   WsResponse,
   Channel,
@@ -318,7 +319,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly channelsService: ChannelsService,
     private readonly websocketService: WebsocketService,
-    private readonly usersService: UsersService
+    private readonly usersService: UsersService,
+    private readonly messagesService: MessagesService
   ) {}
 
   async handleConnection(client: Socket) {
@@ -630,39 +632,96 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         imageUrl: userData.imageUrl
       };
 
-      const message: Message = {
+      // Create temporary message for immediate broadcast
+      const tempMessage: Message = {
         id: `temp-${userId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         content: payload.content,
         channelId: payload.channelId,
         userId: userId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        deliveryStatus: 'SENT',
+        deliveryStatus: 'SENDING',
         user
       };
 
-      // Update room activity with new message
-      this.roomManager.updateMessageActivity(payload.channelId, message);
+      // Step 1: Broadcast temporary message immediately
+      this.server.to(payload.channelId).emit('message:new', {
+        ...tempMessage,
+        delivered: false
+      });
       
-      // Stop typing indicator for this user
-      this.roomManager.stopTyping(payload.channelId, userId);
-
-      // Emit new message
-      this.server.to(payload.channelId).emit('message:new', message);
-      
-      // Emit updated room activity
-      const metadata = this.roomManager.getRoomMetadata(payload.channelId);
-      if (metadata) {
-        this.server.to(payload.channelId).emit('room:activity', {
-          channelId: payload.channelId,
-          memberCount: metadata.memberCount,
-          lastActivity: metadata.lastActivity.toISOString(),
-          activeMembers: this.roomManager.getActiveMembers(payload.channelId)
+      // Step 2: Persist message to database
+      try {
+        const dbMessage = await this.messagesService.createMessage(userId, {
+          content: payload.content,
+          channelId: payload.channelId
         });
-      }
 
-      return { success: true, data: message };
+        // Convert database message to WebSocket message format
+        const savedMessage: Message = {
+          id: dbMessage.id,
+          content: dbMessage.content,
+          channelId: dbMessage.channelId,
+          userId: dbMessage.userId,
+          createdAt: dbMessage.createdAt.toISOString(),
+          updatedAt: dbMessage.updatedAt.toISOString(),
+          deliveryStatus: 'SENT',
+          user: {
+            id: dbMessage.user.id,
+            name: dbMessage.user.name || '',
+            fullName: dbMessage.user.name || '',
+            imageUrl: dbMessage.user.imageUrl || undefined
+          }
+        };
+
+        // Step 3: Notify sender that message was saved
+        client.emit('message:saved', {
+          tempId: tempMessage.id,
+          message: savedMessage
+        });
+
+        // Step 4: Broadcast the persisted message to all clients
+        this.server.to(payload.channelId).emit('message:new', {
+          ...savedMessage,
+          delivered: true
+        });
+
+        // Update room activity with saved message
+        this.roomManager.updateMessageActivity(payload.channelId, savedMessage);
+        
+        // Stop typing indicator for this user
+        this.roomManager.stopTyping(payload.channelId, userId);
+        
+        // Emit updated room activity
+        const metadata = this.roomManager.getRoomMetadata(payload.channelId);
+        if (metadata) {
+          this.server.to(payload.channelId).emit('room:activity', {
+            channelId: payload.channelId,
+            memberCount: metadata.memberCount,
+            lastActivity: metadata.lastActivity.toISOString(),
+            activeMembers: this.roomManager.getActiveMembers(payload.channelId)
+          });
+        }
+
+        return { success: true, data: savedMessage };
+      } catch (error) {
+        // If persistence fails, notify the client
+        client.emit('message:error', {
+          tempId: tempMessage.id,
+          error: 'Failed to save message'
+        });
+
+        // Broadcast message failure to room
+        this.server.to(payload.channelId).emit('message:new', {
+          ...tempMessage,
+          delivered: false,
+          deliveryStatus: 'FAILED'
+        });
+
+        throw error;
+      }
     } catch (error) {
+      this.logger.error(`Error sending message: ${error.message}`);
       return { success: false, error: error.message };
     }
   }
