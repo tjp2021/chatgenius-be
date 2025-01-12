@@ -6,4 +6,4 @@ import { PrismaService } from '@/lib/prisma.service';
   providers: [PrismaService],
   exports: [],
 })
-export class MessageModule {}
+export class ThreadModule {} 

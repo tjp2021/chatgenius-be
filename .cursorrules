@@ -1,165 +1,263 @@
 {
-  "projectName": "SOA Chat Application",
-  "description": "This is a nestjs backend api that is part of a service-oriented architecture chat application featuring real-time chat, AI-powered interactions, and systematic documentation of development and debugging processes.",
+  "projectName": "SOA Chat Application Backend",
+  "description": "A NestJS backend API that is part of a service-oriented architecture chat application featuring real-time chat, AI-powered interactions, and systematic documentation of development and debugging processes.",
   "rules": {
-    "developmentGuidelines": {
-      "codeQualityPrinciples": {
-        "description": "Core principles that must be followed in all code development",
-        "principles": [
-          {
-            "name": "DRY (Don't Repeat Yourself)",
-            "description": "Code must not contain duplicated logic or implementations",
-            "requirements": [
-              "Extract repeated code into reusable functions or classes",
-              "Use shared utilities for common operations",
-              "Implement proper inheritance and composition patterns",
-              "Create shared interfaces and types for repeated structures"
-            ]
-          },
-          {
-            "name": "SOLID Principles",
-            "description": "All code must adhere to SOLID principles",
-            "principles": [
+    "paslCommand": {
+      "trigger": "Run PASL",
+      "description": "Executes a complete Problem Analysis, Solution Attempts, Final Solution, and Lessons Learned cycle",
+      "sequence": [
+        {
+          "step": "Problem Analysis",
+          "template": "Problem Analysis [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Issue Description**: {description}\n- **Symptoms**: {observed behavior}\n- **Impact**: {what's affected}\n- **Initial Investigation**: {first findings}\n- **Root Cause Hypotheses**: {possible causes}"
+        },
+        {
+          "step": "Solution Attempts",
+          "template": "Solution Attempts [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Attempt 1**: {description}\n  - Result: {outcome}\n  - Learnings: {what we discovered}\n- **Attempt 2**: {description}\n  - Result: {outcome}\n  - Learnings: {what we discovered}"
+        },
+        {
+          "step": "Final Solution",
+          "template": "Final Solution [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Solution Description**: {what was done}\n- **Implementation Details**: {how it was done}\n- **Verification**: {how we confirmed it worked}\n- **Side Effects**: {any implications}"
+        },
+        {
+          "step": "Lessons Learned",
+          "template": "Lessons Learned [CG-{YYYYMMDD}-{sequential_number}]\n\n- **Technical Insights**: {what we learned about the system}\n- **Process Improvements**: {what we could do better}\n- **Prevention Strategies**: {how to avoid similar issues}\n- **Documentation Updates**: {what needs to be updated}"
+        }
+      ],
+      "output": {
+        "format": "markdown",
+        "divider": "==================================================================",
+        "autoSave": false
+      }
+    },
+    "deduceCommand": {
+      "trigger": "Run deduce",
+      "description": "Analyzes the context window to deduce error sources and create an implementation plan for debugging NestJS-specific issues",
+      "workflow": {
+        "contextAnalysis": {
+          "steps": [
+            "Review all prior solution attempts",
+            "Identify patterns in failed dependency injections",
+            "Map module dependencies and circular dependencies",
+            "Isolate common failure points in NestJS lifecycle hooks",
+            "Check provider registration issues"
+          ]
+        },
+        "deductiveReasoning": {
+          "process": [
+            "Process of elimination",
+            "Chain of thought reasoning",
+            "Logical deduction",
+            "NestJS-specific pattern recognition"
+          ],
+          "output": {
+            "format": "markdown",
+            "sections": [
               {
-                "name": "Single Responsibility",
-                "description": "Each class/module should have only one reason to change"
+                "title": "NestJS Error Pattern Analysis",
+                "content": [
+                  "Identified patterns in DI errors",
+                  "Common module configuration issues",
+                  "Lifecycle hook problems",
+                  "Environmental factors affecting the NestJS app"
+                ]
               },
               {
-                "name": "Open/Closed",
-                "description": "Software entities should be open for extension but closed for modification"
+                "title": "Module Risk Analysis",
+                "content": [
+                  "High-risk modules identified",
+                  "Dependency injection risk assessment",
+                  "Impact on other modules",
+                  "Probability of cascading failures"
+                ]
               },
               {
-                "name": "Liskov Substitution",
-                "description": "Derived classes must be substitutable for their base classes"
-              },
-              {
-                "name": "Interface Segregation",
-                "description": "Clients should not be forced to depend on interfaces they don't use"
-              },
-              {
-                "name": "Dependency Inversion",
-                "description": "Depend on abstractions, not concretions"
+                "title": "Solution Candidates",
+                "content": [
+                  "Potential NestJS-specific solutions ranked by likelihood",
+                  "Implementation complexity considering NestJS architecture",
+                  "Risk mitigation strategies within NestJS constraints",
+                  "Expected outcomes based on NestJS behavior"
+                ]
               }
             ]
-          },
+          }
+        }
+      }
+    },
+    "developmentGuidelines": {
+      "codeQualityPrinciples": {
+        "description": "Core principles for NestJS backend development",
+        "principles": [
           {
-            "name": "KISS (Keep It Simple, Stupid)",
-            "description": "Code should be as simple as possible, avoiding unnecessary complexity",
+            "name": "NestJS Module Organization",
+            "description": "Proper module organization and dependency management",
             "requirements": [
-              "Write straightforward, easy-to-understand code",
-              "Avoid over-engineering solutions",
-              "Break complex problems into smaller, manageable pieces",
-              "Use clear, descriptive naming conventions"
+              "Feature-based module organization",
+              "Proper provider and controller registration",
+              "Clear module boundaries and responsibilities",
+              "Appropriate use of shared modules"
             ]
           },
           {
-            "name": "YAGNI (You Aren't Gonna Need It)",
-            "description": "Only implement features that are needed now, not what might be needed in the future",
+            "name": "Dependency Injection Best Practices",
+            "description": "Following NestJS DI patterns",
             "requirements": [
-              "Avoid speculative programming",
-              "Focus on current requirements",
-              "Refactor when new requirements arise",
-              "Don't build features 'just in case'"
+              "Use constructor-based injection",
+              "Avoid circular dependencies",
+              "Properly scope providers (REQUEST, DEFAULT, TRANSIENT)",
+              "Use custom providers when needed"
             ]
           },
           {
-            "name": "Fail Fast",
-            "description": "Detect and report failures as soon as possible in the development cycle",
+            "name": "Exception Handling",
+            "description": "Proper exception handling in NestJS",
             "requirements": [
-              "Implement comprehensive error handling",
-              "Use strong typing and validation",
-              "Add meaningful error messages",
-              "Validate inputs early in the process"
+              "Use built-in HTTP exceptions",
+              "Implement custom exception filters",
+              "Global exception handling",
+              "Proper exception hierarchy"
             ]
           },
           {
-            "name": "Clean Code",
-            "description": "Code should be readable, maintainable, and testable",
+            "name": "Middleware and Interceptors",
+            "description": "Proper use of NestJS request pipeline",
             "requirements": [
-              "Use meaningful variable and function names",
-              "Keep functions small and focused",
-              "Write self-documenting code",
-              "Include proper comments for complex logic",
-              "Follow consistent formatting and style"
+              "Use middleware for request preprocessing",
+              "Implement interceptors for response transformation",
+              "Apply guards for authorization",
+              "Use pipes for validation"
             ]
           },
           {
-            "name": "Separation of Concerns",
-            "description": "Different aspects of the application should be separated into distinct sections",
+            "name": "TypeORM Integration",
+            "description": "Best practices for database integration",
             "requirements": [
-              "Separate business logic from presentation logic",
-              "Use proper layering (controllers, services, repositories)",
-              "Keep WebSocket events separate from HTTP endpoints",
-              "Maintain clear boundaries between different modules"
-            ]
-          },
-          {
-            "name": "Defensive Programming",
-            "description": "Anticipate and handle potential errors and edge cases",
-            "requirements": [
-              "Validate all inputs and parameters",
-              "Handle all possible error scenarios",
-              "Implement proper type checking",
-              "Add logging for debugging and monitoring",
-              "Use try-catch blocks appropriately"
+              "Use Repository pattern",
+              "Implement proper entity relationships",
+              "Handle transactions correctly",
+              "Optimize database queries"
             ]
           }
-        ],
-        "validation": {
-          "required": true,
-          "onGeneration": "Must verify code follows DRY and SOLID principles",
-          "onModification": "Must ensure changes maintain DRY and SOLID compliance"
+        ]
+      },
+      "nestPatterns": {
+        "socketCommunication": {
+          "rules": [
+            "Use @WebSocketGateway() properly",
+            "Implement proper socket authentication with WsGuard",
+            "Use @SubscribeMessage() decorator correctly",
+            "Handle WebSocket lifecycle events"
+          ],
+          "bestPractices": {
+            "authentication": "Implement WsGuard for socket authentication",
+            "eventHandling": "Use proper event decorators and typing",
+            "errorHandling": "Implement exception filters for WebSocket events"
+          }
+        },
+        "controllerDesign": {
+          "rules": [
+            "Clear route organization",
+            "Proper HTTP method usage",
+            "Input validation using DTOs",
+            "Response serialization"
+          ],
+          "bestPractices": {
+            "validation": "Use class-validator with ValidationPipe",
+            "serialization": "Use class-transformer for response shaping",
+            "documentation": "Use OpenAPI decorators for Swagger"
+          }
+        },
+        "serviceImplementation": {
+          "rules": [
+            "Business logic isolation",
+            "Proper error handling",
+            "Transaction management",
+            "Caching strategy"
+          ],
+          "bestPractices": {
+            "transactions": "Use @Transaction() decorator",
+            "caching": "Implement CacheInterceptor properly",
+            "logging": "Use NestJS Logger service"
+          }
         }
       },
       "antiPatterns": {
-        "description": "These patterns are strictly forbidden and must never be generated",
+        "description": "Patterns to avoid in NestJS development",
         "forbidden": [
           {
-            "pattern": "Multiple Authentication Points",
-            "description": "Authentication must only happen in WsGuard and BaseGateway",
-            "example": "Checking auth tokens in multiple gateways or services",
-            "prevention": "Always use WsGuard and BaseGateway authentication"
+            "pattern": "Circular Dependencies",
+            "description": "Modules or services depending on each other",
+            "example": "ServiceA -> ServiceB -> ServiceA",
+            "prevention": "Use proper module organization and forwardRef()"
           },
           {
-            "pattern": "Direct Socket Access Outside Gateways",
-            "description": "Socket operations must only occur in gateway classes",
-            "example": "Accessing socket instance in services",
-            "prevention": "Use EventService for all socket communications"
+            "pattern": "Global Module Overuse",
+            "description": "Making too many modules global",
+            "example": "@Global() on non-essential modules",
+            "prevention": "Use feature modules and proper imports"
           },
           {
-            "pattern": "Mixing HTTP and Socket State Changes",
-            "description": "Keep HTTP state changes separate from WebSocket updates",
-            "example": "Emitting socket events from HTTP controllers",
-            "prevention": "Use proper event emission through EventService"
+            "pattern": "Sync Operations in Lifecycle Hooks",
+            "description": "Blocking operations in onModuleInit, etc.",
+            "example": "Synchronous DB operations in onModuleInit",
+            "prevention": "Use async/await in lifecycle hooks"
           },
           {
-            "pattern": "Global State in Socket Instances",
-            "description": "No storing state directly on socket instances",
-            "example": "socket.data = { globalState: {} }",
-            "prevention": "Use proper state management services"
-          },
-          {
-            "pattern": "Lack of Error Handling",
-            "description": "All socket operations must have proper error handling",
-            "example": "Missing try-catch blocks in socket handlers",
-            "prevention": "Always implement comprehensive error handling"
-          },
-          {
-            "pattern": "Synchronous Blocking Operations",
-            "description": "No blocking operations in socket handlers",
-            "example": "Using while loops or synchronous operations",
-            "prevention": "Use async/await and proper Promise handling"
+            "pattern": "Provider Scope Misuse",
+            "description": "Incorrect provider scope selection",
+            "example": "Using REQUEST scope for stateless services",
+            "prevention": "Choose appropriate scope based on state requirements"
           }
-        ],
-        "validation": {
-          "required": true,
-          "onGeneration": "Must verify no anti-patterns are present in generated code",
-          "onModification": "Must verify changes don't introduce anti-patterns"
+        ]
+      }
+    },
+    "documentCommand": {
+      "trigger": "Run doc",
+      "description": "Generates NestJS-specific technical documentation",
+      "categories": {
+        "controller": {
+          "required": [
+            "route",
+            "method",
+            "dto",
+            "guards",
+            "interceptors",
+            "response_type",
+            "swagger_decoration"
+          ]
+        },
+        "service": {
+          "required": [
+            "methods",
+            "dependencies",
+            "error_handling",
+            "transaction_management",
+            "caching_strategy"
+          ]
+        },
+        "module": {
+          "required": [
+            "imports",
+            "exports",
+            "providers",
+            "controllers",
+            "global_status"
+          ]
         }
       }
+    },
+    "narrowScope": {
+      "principles": ["DRY", "SRP", "SOLID"],
+      "prohibitedActions": [
+        "Mixing HTTP and WebSocket concerns",
+        "Improper dependency injection",
+        "Synchronous operations in async context"
+      ],
+      "requiredActions": [
+        "Proper module organization",
+        "Clean separation of concerns",
+        "Proper use of NestJS decorators"
+      ]
     }
   }
 }
-
-
-DO NOT ADD THINGS TO BRAINLIFT.MD UNLESS I EXPLICITLY SAY SO

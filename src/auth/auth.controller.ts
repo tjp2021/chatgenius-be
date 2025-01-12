@@ -1,43 +1,16 @@
-import { Controller, Post, Headers, UnauthorizedException } from '@nestjs/common';
-import { clerkClient } from '@clerk/clerk-sdk-node';
-import { TokenValidationResponse } from './types/auth.types';
+import { Controller, Post, Body } from '@nestjs/common';
+import { AuthService } from './auth.service';
 
 @Controller('auth')
 export class AuthController {
-  @Post('validate')
-  async validateToken(@Headers('authorization') authHeader: string): Promise<TokenValidationResponse> {
-    if (!authHeader) {
-      throw new UnauthorizedException('No authorization header');
-    }
+  constructor(private readonly authService: AuthService) {}
 
-    const [type, token] = authHeader.split(' ');
-
-    if (type !== 'Bearer') {
-      throw new UnauthorizedException('Invalid authorization type');
-    }
-
-    try {
-      // Parse the JWT to get the session id
-      const [_header, payload] = token.split('.');
-      const decodedPayload = JSON.parse(Buffer.from(payload, 'base64').toString());
-      const sessionId = decodedPayload.sid;
-
-      if (!sessionId) {
-        throw new Error('Invalid token format: missing session id');
-      }
-
-      // Verify the session with Clerk
-      const session = await clerkClient.sessions.verifySession(sessionId, token);
-      
-      return {
-        isValid: true,
-        user: {
-          id: session.userId,
-          sub: session.userId
-        }
-      };
-    } catch (error) {
-      throw new UnauthorizedException('Invalid token');
-    }
+  @Post('login')
+  async login(@Body() credentials: { email: string; password: string }) {
+    // TODO: Implement actual login logic
+    const mockUser = { id: 1, email: credentials.email };
+    return {
+      access_token: this.authService.generateToken(mockUser),
+    };
   }
 } 

@@ -1,13 +1,19 @@
 import { Module } from '@nestjs/common';
-import { WebhookController } from './webhook.controller';
-import { UserModule } from '../modules/users/user.module';
-import { RateLimitGuard } from '../shared/guards/rate-limit.guard';
-import { TokenBlacklistService } from './token-blacklist.service';
+import { ConfigModule } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
+import { AuthService } from './auth.service';
+import { AuthController } from './auth.controller';
 
 @Module({
-  imports: [UserModule],
-  controllers: [WebhookController],
-  providers: [RateLimitGuard, TokenBlacklistService],
-  exports: [RateLimitGuard, TokenBlacklistService],
+  imports: [
+    ConfigModule,
+    JwtModule.register({
+      secret: process.env.JWT_SECRET,
+      signOptions: { expiresIn: '1d' },
+    }),
+  ],
+  controllers: [AuthController],
+  providers: [AuthService],
+  exports: [AuthService],
 })
 export class AuthModule {}

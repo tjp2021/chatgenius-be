@@ -6,4 +6,4 @@ import { PrismaModule } from '../../lib/prisma.module';
   providers: [],
   exports: [],
 })
-export class UsersModule {}
+export class MessagesModule {} 

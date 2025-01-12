@@ -17,7 +17,10 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:manual": "ts-node src/modules/threads/test/manual-test.ts",
+    "test:token": "ts-node src/modules/threads/test/generate-token.ts",
+    "test:data": "ts-node src/modules/threads/test/generate-test-data.ts"
   },
   "dependencies": {
     "@clerk/clerk-sdk-node": "^5.1.6",
@@ -42,6 +45,9 @@
     "@supabase/supabase-js": "^2.47.12",
     "@types/cache-manager": "^4.0.6",
     "@types/jsonwebtoken": "^9.0.7",
+    "@types/multer": "^1.4.12",
+    "aws-sdk": "^2.1692.0",
+    "axios": "^1.7.9",
     "cache-manager": "^5.7.6",
     "cache-manager-ioredis": "^2.1.0",
     "class-transformer": "^0.5.1",
@@ -50,12 +56,12 @@
     "ioredis": "^5.4.2",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.1.0",
+    "node-fetch": "^3.3.2",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1",
     "svix": "^1.45.1"
   },
   "devDependencies": {
@@ -66,6 +72,7 @@
     "@types/jest": "^29.5.2",
     "@types/node": "^20.17.12",
     "@types/socket.io": "^3.0.1",
+    "@types/socket.io-client": "^1.4.36",
     "@types/supertest": "^6.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
@@ -75,6 +82,7 @@
     "jest": "^29.5.0",
     "prettier": "^3.0.0",
     "prisma": "^6.2.1",
+    "socket.io-client": "^4.8.1",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "^29.1.0",
