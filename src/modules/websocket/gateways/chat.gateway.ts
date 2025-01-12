@@ -538,70 +538,62 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ): Promise<WsResponse> {
     try {
       const { userId } = client.handshake.auth;
+      let wasDeleted = false;
 
       try {
-        // Remove from database first
-        const { wasDeleted } = await this.channelsService.removeMember(userId, payload.channelId);
-        
-        // Leave socket room
-        await client.leave(payload.channelId);
-        
-        // Emit member left event before removing from room
-        this.server.to(payload.channelId).emit('room:member:left', {
-          channelId: payload.channelId,
-          userId,
-          timestamp: new Date().toISOString()
-        });
-        
-        this.roomManager.leaveRoom(payload.channelId, userId);
-        
-        if (wasDeleted) {
-          // Force cleanup the room immediately
-          const affectedUsers = this.roomManager.forceCleanupRoom(payload.channelId);
-          
-          // Notify all affected users
-          for (const affectedUserId of affectedUsers) {
-            const socket = this.websocketService.getUserSocket(affectedUserId);
-            if (socket) {
-              socket.emit('room:deleted', {
-                channelId: payload.channelId,
-                reason: 'LAST_MEMBER_LEFT'
-              });
-            }
-          }
-        } else {
-          // Emit updated room activity
-          const metadata = this.roomManager.getRoomMetadata(payload.channelId);
-          if (metadata) {
-            this.server.to(payload.channelId).emit('room:activity', {
-              channelId: payload.channelId,
-              memberCount: metadata.memberCount,
-              lastActivity: metadata.lastActivity.toISOString(),
-              activeMembers: this.roomManager.getActiveMembers(payload.channelId)
-            });
-
-            // If room is empty, notify remaining subscribed clients
-            if (metadata.memberCount === 0) {
-              this.server.to(payload.channelId).emit('room:inactive', {
-                channelId: payload.channelId,
-                reason: 'EMPTY_ROOM',
-                cleanupTimeout: ROOM_CLEANUP_CONFIG.EMPTY_ROOM_TIMEOUT_MS
-              });
-            }
-          }
-        }
-
-        return { success: true };
+        // Try to remove from database first
+        const result = await this.channelsService.removeMember(userId, payload.channelId);
+        wasDeleted = result.wasDeleted;
       } catch (error) {
-        // If channel not found, treat it as a successful leave since the channel is already gone
+        // If channel not found, treat it as already deleted
         if (error instanceof NotFoundException) {
-          // Just clean up the socket room and room manager
-          await client.leave(payload.channelId);
-          this.roomManager.leaveRoom(payload.channelId, userId);
-          return { success: true };
+          wasDeleted = true;
+        } else {
+          throw error; // Re-throw other errors
         }
-        throw error; // Re-throw other errors
       }
+
+      // Always clean up socket room and room manager state
+      await client.leave(payload.channelId);
+      this.roomManager.leaveRoom(payload.channelId, userId);
+
+      // If channel was deleted, notify all affected users
+      if (wasDeleted) {
+        const affectedUsers = this.roomManager.forceCleanupRoom(payload.channelId);
+        
+        // Notify all affected users
+        for (const affectedUserId of affectedUsers) {
+          const socket = this.websocketService.getUserSocket(affectedUserId);
+          if (socket) {
+            socket.emit('room:deleted', {
+              channelId: payload.channelId,
+              reason: 'OWNER_LEFT'
+            });
+          }
+        }
+      } else {
+        // Emit updated room activity if channel still exists
+        const metadata = this.roomManager.getRoomMetadata(payload.channelId);
+        if (metadata) {
+          this.server.to(payload.channelId).emit('room:activity', {
+            channelId: payload.channelId,
+            memberCount: metadata.memberCount,
+            lastActivity: metadata.lastActivity.toISOString(),
+            activeMembers: this.roomManager.getActiveMembers(payload.channelId)
+          });
+
+          // If room is empty, notify remaining subscribed clients
+          if (metadata.memberCount === 0) {
+            this.server.to(payload.channelId).emit('room:inactive', {
+              channelId: payload.channelId,
+              reason: 'EMPTY_ROOM',
+              cleanupTimeout: ROOM_CLEANUP_CONFIG.EMPTY_ROOM_TIMEOUT_MS
+            });
+          }
+        }
+      }
+
+      return { success: true };
     } catch (error) {
       this.logger.error(`Error leaving channel: ${error.message}`);
       return { success: false, error: error.message };
