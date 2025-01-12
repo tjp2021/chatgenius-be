@@ -1,100 +1,62 @@
-import { WebSocketGateway, SubscribeMessage, MessageBody, ConnectedSocket, WebSocketServer } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { WebSocketGateway, SubscribeMessage, MessageBody, ConnectedSocket } from '@nestjs/websockets';
 import { UseGuards } from '@nestjs/common';
+import { Socket } from 'socket.io';
 import { WsAuthGuard } from '../guards/ws-auth.guard';
 import { ReactionsService } from '../../messages/services/reactions.service';
-import { CreateMessageReactionDto, DeleteMessageReactionDto } from '../../messages/dto/message-reaction.dto';
-import { MessageEvent } from '../../messages/dto/message-events.enum';
 import { PrismaService } from '../../../lib/prisma.service';
+import { CreateMessageReactionDto, DeleteMessageReactionDto } from '../../messages/dto/message-reaction.dto';
+
+interface ReactionPayload {
+  messageId: string;
+  type: string;
+}
 
 @WebSocketGateway({
   cors: {
     origin: '*',
-    credentials: true
   },
-  namespace: '/api',
-  path: '/socket.io',
-  transports: ['websocket', 'polling']
 })
 @UseGuards(WsAuthGuard)
 export class ChatGateway {
-  @WebSocketServer()
-  server: Server;
-
   constructor(
     private readonly reactionsService: ReactionsService,
     private readonly prisma: PrismaService,
   ) {}
 
-  handleConnection(client: Socket) {
-    console.log('Client connected:', client.id);
-  }
-
-  handleDisconnect(client: Socket) {
-    console.log('Client disconnected:', client.id);
-  }
-
-  @SubscribeMessage('join_channel')
-  async handleJoinChannel(
+  @SubscribeMessage('reaction:add')
+  async handleReactionAdded(
+    @MessageBody() data: ReactionPayload,
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { channelId: string }
   ) {
     try {
       const userId = client.data.userId;
-      
-      // Verify user has access to channel
-      const member = await this.prisma.channelMember.findUnique({
-        where: {
-          channelId_userId: {
-            channelId: data.channelId,
-            userId,
-          },
-        },
-      });
-
-      if (!member) {
-        return { success: false, error: 'Access denied to channel' };
+      if (!userId) {
+        throw new Error('User not authenticated');
       }
 
-      await client.join(`channel:${data.channelId}`);
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
+      // Create DTO from payload
+      const dto: CreateMessageReactionDto = {
+        type: data.type
+      };
 
-  @SubscribeMessage('leave_channel')
-  async handleLeaveChannel(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { channelId: string }
-  ) {
-    try {
-      await client.leave(`channel:${data.channelId}`);
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
+      // Add reaction
+      const reaction = await this.reactionsService.addReaction(userId, data.messageId, dto);
 
-  @SubscribeMessage(MessageEvent.REACTION_ADDED)
-  async handleReactionAdded(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: CreateMessageReactionDto,
-  ) {
-    try {
-      const userId = client.data.userId;
-      const reaction = await this.reactionsService.addReaction(userId, data);
-      
-      // Get the message to get its channelId
+      // Get channel ID for broadcasting
       const message = await this.prisma.message.findUnique({
         where: { id: data.messageId },
         select: { channelId: true },
       });
 
-      if (message) {
-        // Broadcast to all users in the channel
-        this.server.to(`channel:${message.channelId}`).emit(MessageEvent.REACTION_ADDED, reaction);
+      if (!message) {
+        throw new Error('Message not found');
       }
+
+      // Broadcast to channel
+      client.to(message.channelId).emit('reaction:added', {
+        messageId: data.messageId,
+        reaction,
+      });
 
       return { success: true, data: reaction };
     } catch (error) {
@@ -102,29 +64,41 @@ export class ChatGateway {
     }
   }
 
-  @SubscribeMessage(MessageEvent.REACTION_REMOVED)
+  @SubscribeMessage('reaction:remove')
   async handleReactionRemoved(
+    @MessageBody() data: ReactionPayload,
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: DeleteMessageReactionDto,
   ) {
     try {
       const userId = client.data.userId;
-      await this.reactionsService.removeReaction(userId, data);
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
 
-      // Get the message to get its channelId
+      // Create DTO from payload
+      const dto: DeleteMessageReactionDto = {
+        type: data.type
+      };
+
+      // Remove reaction
+      await this.reactionsService.removeReaction(userId, data.messageId, dto);
+
+      // Get channel ID for broadcasting
       const message = await this.prisma.message.findUnique({
         where: { id: data.messageId },
         select: { channelId: true },
       });
 
-      if (message) {
-        // Broadcast to all users in the channel
-        this.server.to(`channel:${message.channelId}`).emit(MessageEvent.REACTION_REMOVED, {
-          messageId: data.messageId,
-          emoji: data.emoji,
-          userId,
-        });
+      if (!message) {
+        throw new Error('Message not found');
       }
+
+      // Broadcast to channel
+      client.to(message.channelId).emit('reaction:removed', {
+        messageId: data.messageId,
+        userId,
+        type: data.type,
+      });
 
       return { success: true };
     } catch (error) {

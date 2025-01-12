@@ -6,10 +6,10 @@ import { CreateMessageReactionDto, DeleteMessageReactionDto, MessageReactionResp
 export class ReactionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async addReaction(userId: string, dto: CreateMessageReactionDto): Promise<MessageReactionResponseDto> {
+  async addReaction(userId: string, messageId: string, dto: CreateMessageReactionDto): Promise<MessageReactionResponseDto> {
     // Verify message exists and user has access
     const message = await this.prisma.message.findUnique({
-      where: { id: dto.messageId },
+      where: { id: messageId },
       include: { channel: true },
     });
 
@@ -35,15 +35,15 @@ export class ReactionsService {
     const reaction = await this.prisma.reaction.upsert({
       where: {
         messageId_userId_type: {
-          messageId: dto.messageId,
+          messageId,
           userId,
-          type: dto.emoji,
+          type: dto.type,
         },
       },
       create: {
-        messageId: dto.messageId,
+        messageId,
         userId,
-        type: dto.emoji,
+        type: dto.type,
       },
       update: {},
       include: {
@@ -59,7 +59,7 @@ export class ReactionsService {
 
     return {
       id: `${reaction.messageId}-${reaction.userId}-${reaction.type}`,
-      emoji: reaction.type,
+      type: reaction.type,
       messageId: reaction.messageId,
       userId: reaction.userId,
       user: reaction.user,
@@ -67,10 +67,10 @@ export class ReactionsService {
     };
   }
 
-  async removeReaction(userId: string, dto: DeleteMessageReactionDto): Promise<void> {
+  async removeReaction(userId: string, messageId: string, dto: DeleteMessageReactionDto): Promise<void> {
     // Verify message exists and user has access
     const message = await this.prisma.message.findUnique({
-      where: { id: dto.messageId },
+      where: { id: messageId },
       include: { channel: true },
     });
 
@@ -96,15 +96,15 @@ export class ReactionsService {
     await this.prisma.reaction.delete({
       where: {
         messageId_userId_type: {
-          messageId: dto.messageId,
+          messageId,
           userId,
-          type: dto.emoji,
+          type: dto.type,
         },
       },
     });
   }
 
-  async getReactions(messageId: string, userId: string): Promise<MessageReactionResponseDto[]> {
+  async getReactions(userId: string, messageId: string): Promise<MessageReactionResponseDto[]> {
     // Verify message exists and user has access
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
@@ -145,7 +145,7 @@ export class ReactionsService {
 
     return reactions.map(reaction => ({
       id: `${reaction.messageId}-${reaction.userId}-${reaction.type}`,
-      emoji: reaction.type,
+      type: reaction.type,
       messageId: reaction.messageId,
       userId: reaction.userId,
       user: reaction.user,

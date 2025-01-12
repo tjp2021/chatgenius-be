@@ -7,7 +7,7 @@ export class MessageReactionResponseDto {
 
   @IsString()
   @IsNotEmpty()
-  emoji: string;
+  type: string;
 
   @IsUUID()
   messageId: string;
@@ -26,19 +26,13 @@ export class MessageReactionResponseDto {
 }
 
 export class CreateMessageReactionDto {
-  @IsUUID()
-  messageId: string;
-
   @IsString()
   @IsNotEmpty()
-  emoji: string;
+  type: string;
 }
 
 export class DeleteMessageReactionDto {
-  @IsUUID()
-  messageId: string;
-
   @IsString()
   @IsNotEmpty()
-  emoji: string;
+  type: string;
 } 
