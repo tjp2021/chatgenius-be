@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../../../lib/prisma.service';
 import { CreateChannelDto } from '../dto/create-channel.dto';
 import { UpdateChannelDto } from '../dto/update-channel.dto';
@@ -27,13 +27,10 @@ export class ChannelsService {
   }
 
   private async getSidebarChannels(userId: string) {
-    // Get public channels where user is a member
+    // Get all channels where user is a member
     return this.prisma.channel.findMany({
       where: {
-        AND: [
-          { type: ChannelType.PUBLIC },
-          { members: { some: { userId } } }
-        ]
+        members: { some: { userId } }
       },
       include: {
         members: {
@@ -390,13 +387,13 @@ export class ChannelsService {
         throw new BadRequestException('User is not a member of this channel');
       }
 
-      // For regular channels, owners can't leave if there are other members
+      // For public channels, owners can't leave if there are other members
       if (
-        channel.type !== ChannelType.DM &&
+        channel.type === ChannelType.PUBLIC &&
         membership.role === MemberRole.OWNER && 
         channel.members.length > 1
       ) {
-        console.log('Owner cannot leave channel with other members');
+        console.log('Owner cannot leave public channel with other members');
         throw new BadRequestException('Channel owner cannot leave while other members exist');
       }
 
@@ -411,9 +408,16 @@ export class ChannelsService {
         },
       });
 
-      // If this was the last member or it's a DM, delete the channel
-      if (channel.members.length === 1 || channel.type === ChannelType.DM) {
-        console.log('Last member or DM channel - deleting channel');
+      // Delete the channel if:
+      // 1. It's the last member, or
+      // 2. It's a DM channel, or
+      // 3. It's a private channel and the owner is leaving
+      if (
+        channel.members.length === 1 || 
+        channel.type === ChannelType.DM ||
+        (channel.type === ChannelType.PRIVATE && membership.role === MemberRole.OWNER)
+      ) {
+        console.log('Deleting channel because: last member, DM channel, or private channel owner leaving');
         await this.deleteChannel(userId, channelId);
         return {
           success: true,
@@ -429,11 +433,13 @@ export class ChannelsService {
       };
 
     } catch (error) {
-      console.error('Error removing member:', error);
+      console.error('Error in removeMember:', error);
+      
       if (error instanceof NotFoundException || error instanceof BadRequestException) {
         throw error;
       }
-      throw new Error(`Failed to leave channel: ${error.message}`);
+      
+      throw new InternalServerErrorException('Failed to leave channel: ' + error.message);
     }
   }
 
@@ -451,13 +457,14 @@ export class ChannelsService {
     }
 
     // For regular channels, verify owner permissions
-    if (channel.type !== ChannelType.DM) {
+    // Skip permission check for DM channels and when owner is leaving a private channel
+    if (channel.type === ChannelType.PUBLIC) {
       const hasPermission = channel.members.some(
         member => member.userId === userId && member.role === MemberRole.OWNER
       );
 
       if (!hasPermission) {
-        throw new Error('Insufficient permissions to delete channel');
+        throw new BadRequestException('Insufficient permissions to delete channel');
       }
     }
 
@@ -477,7 +484,8 @@ export class ChannelsService {
         where: { id: channelId },
       });
     } catch (error) {
-      throw new Error(`Failed to delete channel: ${error.message}`);
+      console.error('Error in deleteChannel:', error);
+      throw new InternalServerErrorException(`Failed to delete channel: ${error.message}`);
     }
   }
 
