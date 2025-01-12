@@ -1,11 +1,18 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsUUID } from 'class-validator';
 
 export class CreateMessageDto {
   @IsString()
-  @IsNotEmpty()
   content: string;
 
-  @IsString()
-  @IsNotEmpty()
+  @IsUUID()
   channelId: string;
+
+  @IsOptional()
+  @IsUUID()
+  replyToId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  attachments?: string[];
 } 

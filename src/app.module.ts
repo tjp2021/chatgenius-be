@@ -1,25 +1,25 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { CoreModule } from './core/core.module';
-import { SharedModule } from './shared/shared.module';
-import { ChannelModule } from './modules/channels/channel.module';
-import { MessageModule } from './modules/messages/message.module';
-import { UserModule } from './modules/users/user.module';
-import { ChannelInvitationModule } from './modules/channels/channel-invitation.module';
-import { WebhookController } from './auth/webhook.controller';
+import { AuthModule } from './auth/auth.module';
+import { ChannelsModule } from './modules/channels/channels.module';
+import { MessagesModule } from './modules/messages/messages.module';
+import { ThreadsModule } from './modules/threads/threads.module';
+import { UsersModule } from './modules/users/users.module';
+import { PrismaModule } from './lib/prisma.module';
+import { WebSocketModule } from './modules/websocket/websocket.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    CoreModule,
-    SharedModule,
-    ChannelModule,
-    MessageModule,
-    UserModule,
-    ChannelInvitationModule,
+    PrismaModule,
+    AuthModule,
+    ChannelsModule,
+    MessagesModule,
+    ThreadsModule,
+    UsersModule,
+    WebSocketModule,
   ],
-  controllers: [WebhookController],
 })
 export class AppModule {}
