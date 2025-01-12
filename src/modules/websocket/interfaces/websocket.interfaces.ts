@@ -22,6 +22,7 @@ export interface ChannelMember {
 export interface User {
   id: string;
   name: string;
+  fullName: string;
   imageUrl?: string;
 }
 

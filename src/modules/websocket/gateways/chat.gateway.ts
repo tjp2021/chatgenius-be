@@ -12,6 +12,8 @@ import { Logger, UseGuards, Injectable } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { WsAuthGuard } from '../guards/ws-auth.guard';
 import { ChannelsService } from '../../channels/services/channels.service';
+import { WebsocketService } from '../services/websocket.service';
+import { UsersService } from '../../users/services/users.service';
 import {
   WsResponse,
   Channel,
@@ -311,10 +313,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   server: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
-  private userSockets = new Map<string, string>(); // userId -> socketId
   private roomManager = new RoomManager();
 
-  constructor(private readonly channelsService: ChannelsService) {}
+  constructor(
+    private readonly channelsService: ChannelsService,
+    private readonly websocketService: WebsocketService,
+    private readonly usersService: UsersService
+  ) {}
 
   async handleConnection(client: Socket) {
     try {
@@ -324,7 +329,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       this.logger.log(`Client connecting: ${client.id} (userId: ${userId})`);
-      this.userSockets.set(userId, client.id);
+      
+      // Get real user data from database
+      const userData = await this.usersService.getUser(userId);
+      if (!userData) {
+        throw new WsException('User not found');
+      }
+      
+      // Create user object with full data
+      const user: User = {
+        id: userId,
+        name: userData.name,
+        fullName: userData.name, // Using name as fullName since that's what we store
+        imageUrl: userData.imageUrl
+      };
+      
+      // Store user data and socket
+      this.websocketService.setUserSocket(userId, client, user);
       
       client.emit('connection:starting');
       
@@ -348,7 +369,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
       
       client.emit('connection:ready');
-      this.server.emit('user:online', userId);
+      
+      // Emit user:online with full user data
+      this.server.emit('user:online', { userId, user });
     } catch (error) {
       this.logger.error(`Connection error: ${error.message}`);
       client.emit('connection:error', { message: error.message });
@@ -360,8 +383,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const { userId } = client.handshake.auth;
     if (userId) {
       // Don't remove from rooms on disconnect to allow rejoining
-      this.userSockets.delete(userId);
-      this.server.emit('user:offline', userId);
+      this.websocketService.removeUserSocket(userId);
+      this.server.emit('user:offline', { userId });
     }
     this.logger.log(`Client disconnected: ${client.id}`);
   }
@@ -382,11 +405,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         memberIds: payload.memberIds
       });
 
+      // Get user data
+      const userData = await this.usersService.getUser(userId);
+      if (!userData) {
+        throw new WsException('User not found');
+      }
+
       // Initialize room for the channel
       const user: User = {
         id: userId,
-        name: 'User', // This will be replaced when we integrate user service
-        imageUrl: undefined
+        name: userData.name,
+        fullName: userData.name,
+        imageUrl: userData.imageUrl
       };
       
       this.roomManager.joinRoom(channel.id, userId, user);
@@ -458,11 +488,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const { userId } = client.handshake.auth;
       await client.join(payload.channelId);
       
-      // Create user object (replace with actual user data later)
+      // Get user data
+      const userData = await this.usersService.getUser(userId);
+      if (!userData) {
+        throw new WsException('User not found');
+      }
+      
+      // Create user object with real data
       const user: User = {
         id: userId,
-        name: 'User', // Replace with actual user data
-        imageUrl: undefined
+        name: userData.name,
+        fullName: userData.name,
+        imageUrl: userData.imageUrl
       };
       
       this.roomManager.joinRoom(payload.channelId, userId, user);
@@ -521,9 +558,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         
         // Notify all affected users
         for (const affectedUserId of affectedUsers) {
-          const socketId = this.userSockets.get(affectedUserId);
-          if (socketId) {
-            this.server.to(socketId).emit('room:deleted', {
+          const socket = this.websocketService.getUserSocket(affectedUserId);
+          if (socket) {
+            socket.emit('room:deleted', {
               channelId: payload.channelId,
               reason: 'LAST_MEMBER_LEFT'
             });
@@ -579,15 +616,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const { userId } = client.handshake.auth;
       
-      // Create user object (replace with actual user data later)
+      // Get user data
+      const userData = await this.usersService.getUser(userId);
+      if (!userData) {
+        throw new WsException('User not found');
+      }
+      
+      // Create user object with real data
       const user: User = {
         id: userId,
-        name: 'User', // Replace with actual user data
-        imageUrl: undefined
+        name: userData.name,
+        fullName: userData.name,
+        imageUrl: userData.imageUrl
       };
 
       const message: Message = {
-        id: `temp-${userId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Generate unique temp ID
+        id: `temp-${userId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         content: payload.content,
         channelId: payload.channelId,
         userId: userId,
@@ -664,11 +708,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ): Promise<void> {
     const { userId } = client.handshake.auth;
     
-    // Create user object (replace with actual user data later)
+    // Get user data
+    const userData = await this.usersService.getUser(userId);
+    if (!userData) {
+      throw new WsException('User not found');
+    }
+    
+    // Create user object with real data
     const user: User = {
       id: userId,
-      name: 'User', // Replace with actual user data
-      imageUrl: undefined
+      name: userData.name,
+      fullName: userData.name,
+      imageUrl: userData.imageUrl
     };
 
     this.roomManager.startTyping(payload.channelId, userId, user);
