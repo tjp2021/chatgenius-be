@@ -3,7 +3,7 @@ import { ChannelsService } from '../services/channels.service';
 import { CreateChannelDto } from '../dto/create-channel.dto';
 import { UpdateChannelDto } from '../dto/update-channel.dto';
 import { ChannelQuery } from '../types/channel.types';
-import { ClerkAuthGuard } from '../../../guards/clerk-auth.guard';
+import { ClerkAuthGuard } from '@/guards/clerk-auth.guard';
 
 @Controller('channels')
 @UseGuards(ClerkAuthGuard)
@@ -37,5 +37,10 @@ export class ChannelsController {
   @Delete(':id')
   async deleteChannel(@Req() req: any, @Param('id') id: string) {
     return this.channelsService.deleteChannel(req.auth.userId, id);
+  }
+
+  @Delete(':id/leave')
+  async leaveChannel(@Req() req: any, @Param('id') id: string) {
+    return this.channelsService.removeMember(req.auth.userId, id);
   }
 } 

@@ -251,85 +251,121 @@ export class ChannelsService {
   }
 
   async removeMember(userId: string, channelId: string) {
-    // First check if user is in the channel
-    const membership = await this.prisma.channelMember.findUnique({
-      where: {
-        channelId_userId: {
-          channelId,
-          userId,
-        },
-      },
-      include: {
-        channel: {
-          include: {
-            members: true,
+    console.log(`Attempting to remove member. userId: ${userId}, channelId: ${channelId}`);
+
+    try {
+      // First check if the channel exists
+      const channel = await this.prisma.channel.findUnique({
+        where: { id: channelId },
+        include: {
+          members: true
+        }
+      });
+
+      console.log('Found channel:', channel);
+
+      if (!channel) {
+        console.log(`Channel not found with ID ${channelId}`);
+        throw new NotFoundException(`Channel with ID ${channelId} not found`);
+      }
+
+      // Then check if user is a member
+      const membership = channel.members.find(member => member.userId === userId);
+      console.log('Found membership:', membership);
+
+      if (!membership) {
+        console.log(`User ${userId} is not a member of channel ${channelId}`);
+        throw new BadRequestException('User is not a member of this channel');
+      }
+
+      // For regular channels, owners can't leave if there are other members
+      if (
+        channel.type !== ChannelType.DM &&
+        membership.role === MemberRole.OWNER && 
+        channel.members.length > 1
+      ) {
+        console.log('Owner cannot leave channel with other members');
+        throw new BadRequestException('Channel owner cannot leave while other members exist');
+      }
+
+      console.log('Attempting to delete channel member');
+      // Remove the member
+      await this.prisma.channelMember.delete({
+        where: {
+          channelId_userId: {
+            channelId,
+            userId,
           },
         },
-      },
-    });
+      });
 
-    if (!membership) {
-      throw new Error('User is not a member of this channel');
+      // If this was the last member or it's a DM, delete the channel
+      if (channel.members.length === 1 || channel.type === ChannelType.DM) {
+        console.log('Last member or DM channel - deleting channel');
+        await this.deleteChannel(userId, channelId);
+        return {
+          success: true,
+          wasDeleted: true,
+          message: 'Successfully left and deleted channel'
+        };
+      }
+
+      return {
+        success: true,
+        wasDeleted: false,
+        message: 'Successfully left channel'
+      };
+
+    } catch (error) {
+      console.error('Error removing member:', error);
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new Error(`Failed to leave channel: ${error.message}`);
     }
-
-    // If user is the owner and there are other members, they can't leave
-    if (
-      membership.role === 'OWNER' && 
-      membership.channel.members.length > 1
-    ) {
-      throw new Error('Channel owner cannot leave while other members exist');
-    }
-
-    // Remove the member
-    await this.prisma.channelMember.delete({
-      where: {
-        channelId_userId: {
-          channelId,
-          userId,
-        },
-      },
-    });
-
-    // If this was the last member, delete the channel
-    if (membership.channel.members.length === 1) {
-      await this.deleteChannel(userId, channelId);
-      return { wasDeleted: true };
-    }
-
-    return { wasDeleted: false };
   }
 
   async deleteChannel(userId: string, channelId: string) {
-    // Verify user has permission to delete channel
+    // First get the channel to check its type
     const channel = await this.prisma.channel.findFirst({
-      where: {
-        id: channelId,
-        members: {
-          some: {
-            userId,
-            role: 'OWNER',
-          },
-        },
-      },
+      where: { id: channelId },
+      include: {
+        members: true
+      }
     });
 
     if (!channel) {
-      throw new Error('Channel not found or insufficient permissions');
+      throw new NotFoundException('Channel not found');
     }
 
-    // Delete all messages first (if we need to maintain referential integrity)
-    await this.prisma.message.deleteMany({
-      where: { channelId },
-    });
+    // For regular channels, verify owner permissions
+    if (channel.type !== ChannelType.DM) {
+      const hasPermission = channel.members.some(
+        member => member.userId === userId && member.role === MemberRole.OWNER
+      );
 
-    // Delete all channel members
-    await this.prisma.channelMember.deleteMany({
-      where: { channelId },
-    });
+      if (!hasPermission) {
+        throw new Error('Insufficient permissions to delete channel');
+      }
+    }
 
-    // Finally delete the channel
-    await this.prisma.channel.delete({
-      where: { id: channelId },
-    });
+    try {
+      // Delete all messages first
+      await this.prisma.message.deleteMany({
+        where: { channelId },
+      });
+
+      // Delete all channel members
+      await this.prisma.channelMember.deleteMany({
+        where: { channelId },
+      });
+
+      // Finally delete the channel
+      await this.prisma.channel.delete({
+        where: { id: channelId },
+      });
+    } catch (error) {
+      throw new Error(`Failed to delete channel: ${error.message}`);
+    }
   }
 } 
