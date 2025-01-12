@@ -12,7 +12,7 @@ class CustomIoAdapter extends IoAdapter {
         origin: '*',
         credentials: true
       },
-      path: '/socket.io',
+      path: '/api/socket.io',
       transports: ['websocket', 'polling']
     });
     return server;

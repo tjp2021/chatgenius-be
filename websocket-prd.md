@@ -272,3 +272,223 @@ describe('ChatGateway', () => {
 - Monitoring setup
 - Troubleshooting steps
 - Performance tuning
+
+# WebSocket Integration Guide
+
+## Connection Settings
+
+### Socket Server Configuration
+```typescript
+const socket = io({
+  path: '/api/socket.io',
+  withCredentials: true,
+  autoConnect: true,
+  // Server accepts connections from any origin
+  // but requires authentication
+});
+```
+
+### Authentication
+The WebSocket server requires authentication using the same session token as your REST API. Ensure your token is included in the connection request.
+
+## Event Types
+
+### Connection Events
+
+#### Client -> Server
+- Connection is handled automatically when initializing the socket client
+- Server will automatically join the client to all their authorized channel rooms
+
+#### Server -> Client
+- On successful connection: Client will be connected and joined to their channels
+- On failed connection: Socket will be disconnected
+
+### Message Events
+
+#### Sending Messages
+```typescript
+// Client -> Server
+socket.emit('message:send', {
+  content: string,      // Message content
+  channelId: string,    // Target channel ID
+  tempId?: string       // Optional temporary ID for tracking message status
+});
+
+// Server -> Client responses
+socket.on('message:delivered', {
+  messageId: string,    // Permanent server-generated ID
+  tempId?: string,      // Your original tempId if provided
+  status: string        // Message delivery status
+});
+
+socket.on('message:created', {
+  message: {           // Complete message object
+    id: string,
+    content: string,
+    // ... other message fields
+  },
+  tempId?: string      // Original tempId if provided
+});
+
+socket.on('message:failed', {
+  error: string,       // Error message
+  tempId?: string,     // Original tempId if provided
+  status: 'FAILED'     // Failed status
+});
+```
+
+### Reaction Events
+
+#### Adding Reactions
+```typescript
+// Client -> Server
+socket.emit('reaction:add', {
+  messageId: string,    // Target message ID
+  type: string         // Reaction type/emoji
+});
+
+// Server -> Client (broadcast to channel)
+socket.on('reaction:added', {
+  messageId: string,    // Message ID
+  reaction: {          // Complete reaction object
+    // ... reaction fields
+  }
+});
+```
+
+#### Removing Reactions
+```typescript
+// Client -> Server
+socket.emit('reaction:remove', {
+  messageId: string,    // Target message ID
+  type: string         // Reaction type/emoji
+});
+
+// Server -> Client (broadcast to channel)
+socket.on('reaction:removed', {
+  messageId: string,    // Message ID
+  userId: string,      // User who removed the reaction
+  type: string         // Reaction type that was removed
+});
+```
+
+### Channel Events
+
+#### Joining Channels
+```typescript
+// Client -> Server
+socket.emit('channel:join', {
+  channelId: string    // Channel to join
+});
+
+// Response will be success/error object
+```
+
+#### Leaving Channels
+```typescript
+// Client -> Server
+socket.emit('channel:leave', {
+  channelId: string    // Channel to leave
+});
+
+// Response will be success/error object
+```
+
+## Error Handling
+
+All events return a response object in the format:
+```typescript
+interface SuccessResponse {
+  success: true;
+  data?: any;
+}
+
+interface ErrorResponse {
+  success: false;
+  error: string;
+}
+```
+
+## Best Practices
+
+1. **Connection Management**
+   - Implement reconnection logic
+   - Handle disconnection events
+   - Verify connection status before sending messages
+
+2. **Message Handling**
+   - Use tempId for tracking message status
+   - Implement local message queue for offline/failed messages
+   - Show appropriate UI feedback based on message status
+
+3. **Error Handling**
+   - Implement error listeners for all emitted events
+   - Show appropriate error messages to users
+   - Implement retry logic for failed operations
+
+## Example Implementation
+
+```typescript
+import { io, Socket } from 'socket.io-client';
+
+class ChatService {
+  private socket: Socket;
+
+  constructor() {
+    this.socket = io({
+      path: '/api/socket.io',
+      withCredentials: true,
+      autoConnect: true
+    });
+
+    this.setupListeners();
+  }
+
+  private setupListeners() {
+    this.socket.on('connect', () => {
+      console.log('Connected to chat server');
+    });
+
+    this.socket.on('disconnect', () => {
+      console.log('Disconnected from chat server');
+    });
+
+    this.socket.on('message:created', (data) => {
+      // Handle new message
+    });
+
+    this.socket.on('message:delivered', (data) => {
+      // Update message status
+    });
+
+    this.socket.on('message:failed', (data) => {
+      // Handle failed message
+    });
+  }
+
+  public sendMessage(channelId: string, content: string) {
+    const tempId = generateTempId(); // Implement your tempId generation
+    
+    this.socket.emit('message:send', {
+      channelId,
+      content,
+      tempId
+    });
+
+    return tempId; // Return tempId for tracking
+  }
+
+  public addReaction(messageId: string, type: string) {
+    this.socket.emit('reaction:add', {
+      messageId,
+      type
+    });
+  }
+
+  public joinChannel(channelId: string) {
+    this.socket.emit('channel:join', {
+      channelId
+    });
+  }
+}
+```

@@ -129,7 +129,7 @@ export class MessagesService {
       throw new ForbiddenException('You do not have access to this channel');
     }
 
-    return this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: {
         content: createMessageDto.content,
         channelId: createMessageDto.channelId,
@@ -147,6 +147,8 @@ export class MessagesService {
         },
       },
     });
+
+    return message;
   }
 
   async updateMessage(messageId: string, userId: string, updateMessageDto: UpdateMessageDto) {
@@ -194,6 +196,22 @@ export class MessagesService {
 
     await this.prisma.message.delete({
       where: { id: messageId },
+    });
+  }
+
+  async updateMessageDeliveryStatus(messageId: string, status: MessageDeliveryStatus) {
+    return this.prisma.message.update({
+      where: { id: messageId },
+      data: { deliveryStatus: status },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+          },
+        },
+      },
     });
   }
 } 
