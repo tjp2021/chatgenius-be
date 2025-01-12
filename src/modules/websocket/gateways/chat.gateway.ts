@@ -7,6 +7,40 @@ import { PrismaService } from '../../../lib/prisma.service';
 import { CreateMessageReactionDto, DeleteMessageReactionDto } from '../../messages/dto/message-reaction.dto';
 import { MessagesService } from '../../messages/services/messages.service';
 
+/**
+ * WebSocket Gateway for Chat Functionality
+ * 
+ * Configuration:
+ * - WebSocket server runs on ws://localhost:3002/api/socket.io
+ * - Supports both websocket and polling transports
+ * - CORS enabled with credentials
+ * - Ping timeout: 60s, Ping interval: 25s, Connect timeout: 10s
+ * 
+ * Authentication Flow:
+ * 1. Client connects with auth data: { token: "Bearer <clerk-jwt>", userId: "<clerk-user-id>" }
+ * 2. WsAuthGuard validates token and userId
+ * 3. User data stored in socket.data after authentication
+ * 
+ * Connection States (ConnectionStatus enum):
+ * - CONNECTING: Initial connection attempt
+ * - CONNECTED: Socket connected but not authenticated
+ * - AUTHENTICATED: Successfully authenticated
+ * - DISCONNECTED: Connection terminated
+ * - ERROR: Connection/auth error occurred
+ * 
+ * Events Handled:
+ * - message:send -> message:delivered, message:created
+ * - reaction:add -> reaction:added
+ * - reaction:remove -> reaction:removed
+ * - channel:join
+ * - channel:leave
+ * 
+ * Anti-Recursion Protection:
+ * - Uses processingMessages and processingReactions Sets
+ * - Tracks message/reaction processing state by client+content
+ * - Prevents duplicate event processing
+ */
+
 // Connection status tracking
 enum ConnectionStatus {
   CONNECTING = 'connecting',
@@ -16,17 +50,25 @@ enum ConnectionStatus {
   ERROR = 'error'
 }
 
+/**
+ * Payload for reaction events
+ * Used by reaction:add and reaction:remove events
+ */
 interface ReactionPayload {
-  messageId: string;
-  type: string;
-  processed?: boolean;
+  messageId: string;  // ID of message being reacted to
+  type: string;      // Type of reaction (emoji)
+  processed?: boolean; // Flag to prevent duplicate processing
 }
 
+/**
+ * Payload for message events
+ * Used by message:send event
+ */
 interface MessagePayload {
-  content: string;
-  channelId: string;
-  tempId?: string;
-  processed?: boolean;
+  content: string;    // Message content
+  channelId: string;  // Target channel ID
+  tempId?: string;    // Temporary client-side ID for tracking
+  processed?: boolean; // Flag to prevent duplicate processing
 }
 
 @WebSocketGateway({
@@ -72,6 +114,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     server.engine.on('transport_error', (err) => {
       this.logger.error(`Transport error: ${err.message}`, err.stack);
     });
+
+    // Add raw event logging
+    server.engine.on('packet', (packet) => {
+      this.logger.debug('[Raw Socket Packet]', { packet });
+    });
+
+    // Log all incoming events
+    server.on('connection', (socket) => {
+      socket.onAny((eventName, ...args) => {
+        this.logger.debug(`[Raw Socket Event] ${eventName}`, {
+          socketId: socket.id,
+          userId: socket.data?.userId,
+          args
+        });
+      });
+    });
   }
 
   private handleConnectionError(client: Socket, error: Error, reason: string) {
@@ -85,6 +143,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     client.disconnect(true);
   }
 
+  /**
+   * Handles new socket connections
+   * Connection Flow:
+   * 1. Log connection attempt
+   * 2. Set initial connection status
+   * 3. Track connection attempts (max 5)
+   * 4. Authenticate via WsAuthGuard
+   * 5. Extract and verify userId
+   * 6. Join user's channel rooms
+   * 7. Setup error handlers
+   * 8. Emit success event
+   */
   async handleConnection(client: Socket) {
     try {
       this.logger.log(`Client attempting to connect: ${client.id}`);
@@ -165,6 +235,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
+  /**
+   * Handles socket disconnections
+   * Cleanup Flow:
+   * 1. Log disconnection
+   * 2. Update connection status
+   * 3. Reset connection attempts if clean disconnect
+   * 4. Clean up message/reaction processing states
+   */
   handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
     this.logger.debug(`Disconnect status: ${this.clientStatus.get(client.id)}`);
@@ -191,62 +269,121 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
+  /**
+   * Handles message sending
+   * Message Flow:
+   * 1. Generate unique message key (clientId:tempId/content)
+   * 2. Check for duplicate processing
+   * 3. Create message in database
+   * 4. Update delivery status
+   * 5. Emit to sender: message:delivered
+   * 6. Emit to channel: message:created
+   * 
+   * @param data MessagePayload with content, channelId, tempId
+   * @param client Connected socket client
+   */
   @SubscribeMessage('message:send')
   async handleMessageSent(
     @MessageBody() data: MessagePayload,
     @ConnectedSocket() client: Socket,
   ) {
-    this.logger.log(`Received message:send event from client ${client.id}`, data);
+    this.logger.debug('=== HANDLER TRIGGERED ===');
+    this.logger.debug('Message payload received:', data);
+    
+    // Log raw incoming message event
+    this.logger.debug('[Raw Message Event]', {
+      event: 'message:send',
+      socketId: client.id,
+      userId: client.data?.userId,
+      rawData: data,
+      timestamp: new Date().toISOString()
+    });
+
+    this.logger.log(`[Start] Processing message:send event from client ${client.id}`);
+    this.logger.debug('Message payload:', { 
+      content: data.content,
+      channelId: data.channelId,
+      tempId: data.tempId,
+      clientId: client.id
+    });
     
     const messageKey = `${client.id}:${data.tempId || data.content}`;
     if (this.processingMessages.has(messageKey)) {
-      this.logger.warn(`Duplicate message processing prevented: ${messageKey}`);
+      this.logger.warn(`[Duplicate] Message processing prevented: ${messageKey}`);
       return { success: false, error: 'Message already being processed' };
     }
 
     try {
       this.processingMessages.add(messageKey);
+      this.logger.debug(`[Processing] Added message key to processing set: ${messageKey}`);
+      
       const userId = client.data?.userId;
       if (!userId) {
+        this.logger.error('[Auth Error] User not authenticated for message send');
         throw new Error('User not authenticated');
       }
 
-      this.logger.log(`Creating message from user ${userId} in channel ${data.channelId} with tempId ${data.tempId}`);
+      this.logger.log(`[DB Create] Creating message from user ${userId} in channel ${data.channelId}`);
+      this.logger.debug('Message creation details:', {
+        userId,
+        channelId: data.channelId,
+        content: data.content,
+        tempId: data.tempId
+      });
 
       const message = await this.messagesService.createMessage(userId, {
         content: data.content,
         channelId: data.channelId,
       });
 
-      this.logger.log(`Message created successfully with ID ${message.id}`);
+      this.logger.log(`[DB Success] Message created with ID ${message.id}`);
+      this.logger.debug('Created message details:', { message });
 
+      this.logger.log(`[DB Update] Updating message delivery status for ID ${message.id}`);
       const deliveredMessage = await this.messagesService.updateMessageDeliveryStatus(
         message.id,
         'DELIVERED'
       );
+      this.logger.debug('Updated message details:', { deliveredMessage });
 
-      client.emit('message:delivered', {
+      this.logger.log(`[Emit] Sending message:delivered to sender (client ${client.id})`);
+      const deliveredPayload = {
         messageId: deliveredMessage.id,
         tempId: data.tempId,
         status: deliveredMessage.deliveryStatus,
         processed: true
-      });
+      };
+      this.logger.debug('[Outgoing Event] message:delivered payload:', deliveredPayload);
+      this.server.to(client.id).emit('message:delivered', deliveredPayload);
 
-      client.to(data.channelId).emit('message:created', {
+      this.logger.log(`[Broadcast] Broadcasting message:created to channel ${data.channelId}`);
+      const createdPayload = {
         message: deliveredMessage,
         tempId: data.tempId,
         processed: true
-      });
+      };
+      this.logger.debug('[Outgoing Event] message:created payload:', createdPayload);
+      this.server.to(data.channelId).emit('message:created', createdPayload);
 
-      return { 
+      this.logger.log(`[Complete] Successfully processed message:send event`);
+      const response = { 
         success: true, 
         data: deliveredMessage,
         processed: true
       };
+      this.logger.debug('[Outgoing Event] message:send response:', response);
+      return response;
     } catch (error) {
-      this.logger.error('Error sending message:', error.stack);
+      this.logger.error('[Error] Error processing message:send event:', error.stack);
+      this.logger.debug('Error context:', {
+        clientId: client.id,
+        messageKey,
+        channelId: data.channelId,
+        tempId: data.tempId
+      });
       
       if (data.tempId) {
+        this.logger.log(`[Error Emit] Sending message:failed to client ${client.id}`);
         client.emit('message:failed', {
           error: error.message,
           tempId: data.tempId,
@@ -257,10 +394,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       
       throw error;
     } finally {
+      this.logger.debug(`[Cleanup] Removing message key from processing set: ${messageKey}`);
       this.processingMessages.delete(messageKey);
     }
   }
 
+  /**
+   * Handles adding reactions
+   * Reaction Flow:
+   * 1. Generate unique reaction key (clientId:messageId:type)
+   * 2. Check for duplicate processing
+   * 3. Add reaction in database
+   * 4. Emit to channel: reaction:added
+   * 
+   * @param data ReactionPayload with messageId and type
+   * @param client Connected socket client
+   */
   @SubscribeMessage('reaction:add')
   async handleReactionAdded(
     @MessageBody() data: ReactionPayload,
@@ -308,6 +457,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
+  /**
+   * Handles removing reactions
+   * Reaction Removal Flow:
+   * 1. Generate unique reaction key (clientId:messageId:type:remove)
+   * 2. Check for duplicate processing
+   * 3. Remove reaction from database
+   * 4. Emit to channel: reaction:removed
+   * 
+   * @param data ReactionPayload with messageId and type
+   * @param client Connected socket client
+   */
   @SubscribeMessage('reaction:remove')
   async handleReactionRemoved(
     @MessageBody() data: ReactionPayload,
@@ -356,6 +516,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
+  /**
+   * Handles channel join requests
+   * Join Flow:
+   * 1. Verify user authentication
+   * 2. Check user's channel membership
+   * 3. Join socket room for channel
+   * 4. Return success status
+   * 
+   * @param data Object containing channelId
+   * @param client Connected socket client
+   */
   @SubscribeMessage('channel:join')
   async handleJoinChannel(
     @MessageBody() data: { channelId: string },
@@ -394,6 +565,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
+  /**
+   * Handles channel leave requests
+   * Leave Flow:
+   * 1. Leave socket room for channel
+   * 2. Return success status
+   * 
+   * @param data Object containing channelId
+   * @param client Connected socket client
+   */
   @SubscribeMessage('channel:leave')
   async handleLeaveChannel(
     @MessageBody() data: { channelId: string },
