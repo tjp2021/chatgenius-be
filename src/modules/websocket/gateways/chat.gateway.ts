@@ -587,7 +587,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       };
 
       const message: Message = {
-        id: 'temp-id', // Replace with actual message creation
+        id: `temp-${userId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Generate unique temp ID
         content: payload.content,
         channelId: payload.channelId,
         userId: userId,
