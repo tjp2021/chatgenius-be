@@ -71,9 +71,29 @@ interface MessagePayload {
   processed?: boolean; // Flag to prevent duplicate processing
 }
 
+/**
+ * Payload for thread events
+ * Used by thread:reply event
+ */
+interface ThreadMessagePayload {
+  content: string;     // Message content
+  threadId: string;    // Parent message ID that started the thread
+  channelId: string;   // Channel ID where the thread exists
+  tempId?: string;     // Temporary client-side ID for tracking
+  processed?: boolean; // Flag to prevent duplicate processing
+}
+
+/**
+ * Payload for thread join/leave events
+ */
+interface ThreadRoomPayload {
+  threadId: string;    // Parent message ID that started the thread
+  channelId: string;   // Channel ID where the thread exists
+}
+
 @WebSocketGateway({
   cors: {
-    origin: true,
+    origin: ['http://localhost:3000', 'http://localhost:3002'],
     credentials: true
   },
   path: '/api/socket.io',
@@ -584,6 +604,196 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Handles thread join requests
+   * Thread Join Flow:
+   * 1. Verify user authentication
+   * 2. Join socket room for thread
+   * 3. Return success status
+   * 
+   * @param data ThreadRoomPayload containing threadId and channelId
+   * @param client Connected socket client
+   */
+  @SubscribeMessage('thread:join')
+  async handleThreadJoin(
+    @MessageBody() data: ThreadRoomPayload,
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const userId = client.data?.userId;
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
+
+      this.logger.log(`[Thread] User ${userId} joining thread ${data.threadId}`);
+      
+      // Join the thread room
+      const threadRoom = `thread:${data.threadId}`;
+      await client.join(threadRoom);
+      
+      this.logger.log(`[Thread] Client ${client.id} joined thread room: ${threadRoom}`);
+      
+      // Broadcast to thread room that user joined
+      this.server.to(threadRoom).emit('thread:joined', {
+        threadId: data.threadId,
+        userId,
+        timestamp: new Date(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`[Thread] Error joining thread: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Handles thread leave requests
+   * Thread Leave Flow:
+   * 1. Leave thread room
+   * 2. Broadcast departure
+   * 3. Return success status
+   * 
+   * @param data ThreadRoomPayload containing threadId and channelId
+   * @param client Connected socket client
+   */
+  @SubscribeMessage('thread:leave')
+  async handleThreadLeave(
+    @MessageBody() data: ThreadRoomPayload,
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const userId = client.data?.userId;
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
+
+      this.logger.log(`[Thread] User ${userId} leaving thread ${data.threadId}`);
+      
+      const threadRoom = `thread:${data.threadId}`;
+      await client.leave(threadRoom);
+      
+      // Broadcast to remaining thread participants
+      this.server.to(threadRoom).emit('thread:left', {
+        threadId: data.threadId,
+        userId,
+        timestamp: new Date(),
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`[Thread] Error leaving thread: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Handles thread replies
+   * Thread Reply Flow:
+   * 1. Generate unique message key
+   * 2. Check for duplicate processing
+   * 3. Create message in database with threadId
+   * 4. Update delivery status
+   * 5. Emit to sender: thread:reply:delivered
+   * 6. Emit to thread room: thread:reply:created
+   * 
+   * @param data ThreadMessagePayload with content and threadId
+   * @param client Connected socket client
+   */
+  @SubscribeMessage('thread:reply')
+  async handleThreadReply(
+    @MessageBody() data: ThreadMessagePayload,
+    @ConnectedSocket() client: Socket,
+  ) {
+    this.logger.debug('[Thread] === HANDLER TRIGGERED ===');
+    this.logger.debug('[Thread] Reply payload received:', data);
+
+    const messageKey = `${client.id}:thread:${data.tempId || data.content}`;
+    if (this.processingMessages.has(messageKey)) {
+      this.logger.warn(`[Thread] [Duplicate] Reply processing prevented: ${messageKey}`);
+      return { success: false, error: 'Message already being processed' };
+    }
+
+    try {
+      this.processingMessages.add(messageKey);
+      this.logger.debug(`[Thread] [Processing] Added reply key to processing set: ${messageKey}`);
+      
+      const userId = client.data?.userId;
+      if (!userId) {
+        this.logger.error('[Thread] [Auth Error] User not authenticated for thread reply');
+        throw new Error('User not authenticated');
+      }
+
+      this.logger.log(`[Thread] [DB Create] Creating reply from user ${userId} in thread ${data.threadId}`);
+      
+      // Create the thread reply
+      const message = await this.messagesService.createMessage(userId, {
+        content: data.content,
+        channelId: data.channelId,
+        replyToId: data.threadId, // This marks it as a thread reply
+      });
+
+      this.logger.log(`[Thread] [DB Success] Reply created with ID ${message.id}`);
+      
+      // Update delivery status
+      const deliveredMessage = await this.messagesService.updateMessageDeliveryStatus(
+        message.id,
+        'DELIVERED'
+      );
+
+      // Emit delivery confirmation to sender
+      const deliveredPayload = {
+        messageId: deliveredMessage.id,
+        threadId: data.threadId,
+        tempId: data.tempId,
+        status: deliveredMessage.deliveryStatus,
+        processed: true
+      };
+      
+      this.logger.debug('[Thread] [Outgoing Event] thread:reply:delivered payload:', deliveredPayload);
+      this.server.to(client.id).emit('thread:reply:delivered', deliveredPayload);
+
+      // Broadcast to thread room
+      const threadRoom = `thread:${data.threadId}`;
+      const createdPayload = {
+        message: deliveredMessage,
+        threadId: data.threadId,
+        tempId: data.tempId,
+        processed: true
+      };
+      
+      this.logger.debug('[Thread] [Outgoing Event] thread:reply:created payload:', createdPayload);
+      this.server.to(threadRoom).emit('thread:reply:created', createdPayload);
+
+      // Also broadcast to channel for thread count updates
+      this.server.to(data.channelId).emit('thread:updated', {
+        threadId: data.threadId,
+        replyCount: await this.messagesService.getThreadReplyCount(data.threadId),
+        lastReply: deliveredMessage,
+        processed: true
+      });
+
+      return { success: true, data: deliveredMessage, processed: true };
+    } catch (error) {
+      this.logger.error('[Thread] [Error] Error processing thread reply:', error.stack);
+      
+      if (data.tempId) {
+        client.emit('thread:reply:failed', {
+          error: error.message,
+          threadId: data.threadId,
+          tempId: data.tempId,
+          status: 'FAILED',
+          processed: true
+        });
+      }
+      
+      throw error;
+    } finally {
+      this.logger.debug(`[Thread] [Cleanup] Removing reply key from processing set: ${messageKey}`);
+      this.processingMessages.delete(messageKey);
     }
   }
 } 

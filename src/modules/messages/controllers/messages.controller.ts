@@ -102,4 +102,52 @@ export class MessagesController {
       throw new InternalServerErrorException(error.message);
     }
   }
+
+  /**
+   * Get messages in a thread with pagination
+   */
+  @Get(':threadId/thread')
+  async getThreadMessages(
+    @Param('threadId') threadId: string,
+    @Req() req: any,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    try {
+      this.logger.log(`Getting thread messages for thread ${threadId} by user ${req.auth?.userId}`);
+      
+      if (!req.auth?.userId) {
+        throw new Error('User ID not found in request');
+      }
+      
+      const parsedLimit = limit ? parseInt(limit, 10) : undefined;
+      
+      return await this.messagesService.getThreadMessages(threadId, req.auth.userId, parsedLimit, cursor);
+    } catch (error) {
+      this.logger.error(`Error getting thread messages: ${error.message}`, error.stack);
+      throw new InternalServerErrorException(error.message);
+    }
+  }
+
+  /**
+   * Get thread details including starter message and metadata
+   */
+  @Get(':threadId/thread/details')
+  async getThreadDetails(
+    @Param('threadId') threadId: string,
+    @Req() req: any,
+  ) {
+    try {
+      this.logger.log(`Getting thread details for thread ${threadId} by user ${req.auth?.userId}`);
+      
+      if (!req.auth?.userId) {
+        throw new Error('User ID not found in request');
+      }
+      
+      return await this.messagesService.getThreadDetails(threadId, req.auth.userId);
+    } catch (error) {
+      this.logger.error(`Error getting thread details: ${error.message}`, error.stack);
+      throw new InternalServerErrorException(error.message);
+    }
+  }
 } 

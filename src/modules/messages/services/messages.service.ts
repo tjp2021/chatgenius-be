@@ -214,4 +214,175 @@ export class MessagesService {
       },
     });
   }
+
+  /**
+   * Get the number of replies in a thread
+   * @param threadId The ID of the message that started the thread
+   * @returns The number of replies in the thread
+   */
+  async getThreadReplyCount(threadId: string): Promise<number> {
+    const count = await this.prisma.message.count({
+      where: {
+        replyToId: threadId,
+      },
+    });
+
+    return count;
+  }
+
+  /**
+   * Get all messages in a thread with pagination
+   * @param threadId The ID of the message that started the thread
+   * @param userId The ID of the user requesting the messages
+   * @param limit Maximum number of messages to return
+   * @param cursor Cursor for pagination
+   */
+  async getThreadMessages(threadId: string, userId: string, limit = 50, cursor?: string) {
+    // First get the thread starter message to verify channel access
+    const threadStarter = await this.prisma.message.findUnique({
+      where: { id: threadId },
+      select: { channelId: true },
+    });
+
+    if (!threadStarter) {
+      throw new NotFoundException('Thread not found');
+    }
+
+    // Verify user has access to channel
+    const member = await this.prisma.channelMember.findUnique({
+      where: {
+        channelId_userId: {
+          channelId: threadStarter.channelId,
+          userId,
+        },
+      },
+    });
+
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this thread');
+    }
+
+    // Get thread messages with cursor-based pagination
+    const messages = await this.prisma.message.findMany({
+      where: {
+        replyToId: threadId,
+      },
+      take: limit,
+      ...(cursor && {
+        cursor: {
+          id: cursor,
+        },
+        skip: 1, // Skip the cursor
+      }),
+      orderBy: {
+        createdAt: 'asc', // Thread messages in chronological order
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+          },
+        },
+        reactions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const nextCursor = messages.length === limit ? messages[messages.length - 1].id : null;
+
+    return {
+      messages,
+      nextCursor,
+    };
+  }
+
+  /**
+   * Get thread details including the starter message
+   * @param threadId The ID of the message that started the thread
+   * @param userId The ID of the user requesting the details
+   */
+  async getThreadDetails(threadId: string, userId: string) {
+    const threadStarter = await this.prisma.message.findUnique({
+      where: { id: threadId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+          },
+        },
+        reactions: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            replies: true, // Count of replies in thread
+          },
+        },
+      },
+    });
+
+    if (!threadStarter) {
+      throw new NotFoundException('Thread not found');
+    }
+
+    // Verify user has access to channel
+    const member = await this.prisma.channelMember.findUnique({
+      where: {
+        channelId_userId: {
+          channelId: threadStarter.channelId,
+          userId,
+        },
+      },
+    });
+
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this thread');
+    }
+
+    // Get the latest reply
+    const latestReply = await this.prisma.message.findFirst({
+      where: {
+        replyToId: threadId,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+          },
+        },
+      },
+    });
+
+    return {
+      threadStarter,
+      replyCount: threadStarter._count.replies,
+      latestReply,
+    };
+  }
 } 
