@@ -4,20 +4,29 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// DO NOT MODIFY THE SOCKET.IO CONFIGURATION BELOW
+// This configuration is final and has been tested to work correctly
+// Any changes to this may break the WebSocket functionality
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 class CustomIoAdapter extends IoAdapter {
   createIOServer(port: number, options?: any) {
     const server = super.createIOServer(port, {
       ...options,
       cors: {
-        origin: '*',
+        origin: 'http://localhost:3000',
+        methods: ['GET', 'POST'],
         credentials: true
       },
-      path: '/api/socket.io',
-      transports: ['websocket', 'polling']
+      path: '/socket.io',
+      transports: ['polling', 'websocket']
     });
     return server;
   }
 }
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// END OF SOCKET.IO CONFIGURATION - DO NOT MODIFY ANYTHING ABOVE
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
