@@ -79,30 +79,48 @@ export class FilesService implements FileRepository {
   }
 
   async search(query: FileSearchDto): Promise<{ items: File[]; total: number }> {
-    const where = {
-      ...(query.filename && { name: { contains: query.filename } }),
-      ...(query.type && { type: query.type }),
-      ...(query.userId && { userId: query.userId }),
-    };
+    try {
+      const where = {
+        ...(query.filename && { name: { contains: query.filename } }),
+        ...(query.type && { type: query.type }),
+        ...(query.userId && { userId: query.userId }),
+      };
 
-    const [items, total] = await Promise.all([
-      this.prisma.file.findMany({
-        where,
-        skip: query.skip,
-        take: query.take,
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.file.count({ where }),
-    ]);
+      const [items, total] = await Promise.all([
+        this.prisma.file.findMany({
+          where,
+          skip: query.skip || 0,
+          take: query.take || 10,
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.file.count({ where }),
+      ]);
 
-    const filesWithSignedUrls = await Promise.all(
-      items.map(async (file) => ({
-        ...file,
-        url: await this.s3Service.getSignedUrl(this.getKeyFromUrl(file.url)),
-      })),
-    );
+      const filesWithSignedUrls = await Promise.all(
+        items.map(async (file) => {
+          try {
+            return {
+              ...file,
+              url: await this.s3Service.getSignedUrl(this.getKeyFromUrl(file.url)),
+            };
+          } catch (error) {
+            this.logger.error(`Failed to generate signed URL for file ${file.id}: ${error.message}`);
+            return {
+              ...file,
+              url: file.url, // Return original URL if signing fails
+            };
+          }
+        }),
+      );
 
-    return { items: filesWithSignedUrls, total };
+      return { 
+        items: filesWithSignedUrls, 
+        total 
+      };
+    } catch (error) {
+      this.logger.error(`Failed to search files: ${error.message}`, error.stack);
+      throw new BadRequestException('Failed to search files');
+    }
   }
 
   private validateFile(file: Express.Multer.File): void {

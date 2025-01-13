@@ -10,6 +10,7 @@ import {
   UseGuards,
   BadRequestException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
@@ -34,6 +35,8 @@ import { memoryStorage } from 'multer';
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
 export class FilesController {
+  private readonly logger = new Logger(FilesController.name);
+
   constructor(private readonly filesService: FilesService) {}
 
   @Post('upload')
@@ -227,8 +230,29 @@ export class FilesController {
       },
     },
   })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: 'Invalid search parameters',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: { type: 'string' },
+        error: { type: 'string', example: 'Bad Request' },
+      },
+    },
+  })
   async searchFiles(@Query() query: FileSearchDto, @User('id') userId: string) {
-    return this.filesService.search({ ...query, userId });
+    try {
+      const result = await this.filesService.search({ ...query, userId });
+      return {
+        items: result.items,
+        total: result.total
+      };
+    } catch (error) {
+      this.logger.error(`Error searching files: ${error.message}`, error.stack);
+      throw new BadRequestException('Failed to search files');
+    }
   }
 
   @Delete(':id')

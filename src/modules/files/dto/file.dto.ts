@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, Min, Max } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class FileUploadDto {
@@ -24,14 +24,9 @@ export class FileSearchDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @Min(0)
   skip?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsNumber()
-  @Min(1)
-  @Max(100)
-  take?: number = 10;
+  take?: number;
 } 
