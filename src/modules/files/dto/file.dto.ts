@@ -19,6 +19,11 @@ export class FileSearchDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
+  userId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsNumber()
   @Min(0)
   skip?: number;
