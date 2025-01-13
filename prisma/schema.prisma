@@ -56,6 +56,7 @@ model User {
   readReceipts   ReadReceipt[]
   receivedInvitations ChannelInvitation[] @relation("ReceivedInvitations")
   sentInvitations     ChannelInvitation[] @relation("SentInvitations")
+  files          File[]
 
   @@map("users")
 }
@@ -193,4 +194,20 @@ model ChannelNavigation {
 
   @@unique([userId, channelId])
   @@map("channel_navigation")
+}
+
+model File {
+  id        String   @id @default(uuid())
+  name      String
+  type      String
+  size      Int
+  url       String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("files")
 }
