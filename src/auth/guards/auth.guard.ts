@@ -13,7 +13,10 @@ export class AuthGuard implements CanActivate {
 
     try {
       const jwt = await clerkClient.verifyToken(token);
-      request.user = jwt;
+      request.user = {
+        id: jwt.sub,
+        // Add other user properties if needed
+      };
       return true;
     } catch (error) {
       throw new UnauthorizedException('Invalid token');

@@ -17,21 +17,39 @@ export class FilesService implements FileRepository {
     private readonly s3Service: S3Service,
   ) {}
 
-  async create(fileData: Express.Multer.File, userId: string): Promise<File> {
-    this.validateFile(fileData);
+  async create(file: Omit<File, 'id' | 'createdAt' | 'updatedAt'>): Promise<File>;
+  async create(fileData: Express.Multer.File, userId: string): Promise<File>;
+  async create(
+    fileOrData: Express.Multer.File | Omit<File, 'id' | 'createdAt' | 'updatedAt'>,
+    userId?: string
+  ): Promise<File> {
+    if (this.isMulterFile(fileOrData)) {
+      this.validateFile(fileOrData);
+      const key = `${userId}/${uuidv4()}-${fileOrData.originalname}`;
+      const url = await this.s3Service.uploadFile(fileOrData, key);
 
-    const key = `${userId}/${uuidv4()}-${fileData.originalname}`;
-    const url = await this.s3Service.uploadFile(fileData, key);
+      return this.prisma.file.create({
+        data: {
+          name: fileOrData.originalname,
+          type: fileOrData.mimetype,
+          size: fileOrData.size,
+          url,
+          user: {
+            connect: {
+              id: userId!
+            }
+          }
+        },
+      });
+    } else {
+      return this.prisma.file.create({
+        data: fileOrData,
+      });
+    }
+  }
 
-    return this.prisma.file.create({
-      data: {
-        name: fileData.originalname,
-        type: fileData.mimetype,
-        size: fileData.size,
-        url,
-        userId,
-      },
-    });
+  private isMulterFile(file: any): file is Express.Multer.File {
+    return 'originalname' in file && 'mimetype' in file && 'size' in file;
   }
 
   async findById(id: string): Promise<File | null> {
@@ -64,6 +82,7 @@ export class FilesService implements FileRepository {
     const where = {
       ...(query.filename && { name: { contains: query.filename } }),
       ...(query.type && { type: query.type }),
+      ...(query.userId && { userId: query.userId }),
     };
 
     const [items, total] = await Promise.all([

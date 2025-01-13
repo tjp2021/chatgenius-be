@@ -12,6 +12,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Express } from 'express';
 import {
   ApiTags,
   ApiConsumes,
@@ -26,6 +27,7 @@ import { FilesService } from '../services/files.service';
 import { FileUploadDto, FileSearchDto } from '../dto/file.dto';
 import { AuthGuard } from '../../../auth/guards/auth.guard';
 import { User } from '../../../auth/decorators/user.decorator';
+import { memoryStorage } from 'multer';
 
 @ApiTags('File Management')
 @Controller('files')
@@ -88,7 +90,19 @@ export class FilesController {
       },
     },
   })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', {
+    storage: memoryStorage(),
+    limits: {
+      fileSize: 5 * 1024 * 1024, // 5MB
+    },
+    fileFilter: (req, file, callback) => {
+      const allowedMimeTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+      if (!allowedMimeTypes.includes(file.mimetype)) {
+        callback(new BadRequestException(`Invalid file type. Allowed types: ${allowedMimeTypes.join(', ')}`), false);
+      }
+      callback(null, true);
+    },
+  }))
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
     @User('id') userId: string,

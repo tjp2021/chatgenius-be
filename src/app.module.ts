@@ -7,6 +7,7 @@ import { ThreadsModule } from './modules/threads/threads.module';
 import { UsersModule } from './modules/users/users.module';
 import { PrismaModule } from './lib/prisma.module';
 import { WebSocketModule } from './modules/websocket/websocket.module';
+import { FilesModule } from './modules/files/files.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { WebSocketModule } from './modules/websocket/websocket.module';
     ThreadsModule,
     UsersModule,
     WebSocketModule,
+    FilesModule,
   ],
 })
 export class AppModule {}
