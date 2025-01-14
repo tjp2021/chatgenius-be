@@ -14,12 +14,14 @@ class CustomIoAdapter extends IoAdapter {
     const server = super.createIOServer(port, {
       ...options,
       cors: {
-        origin: 'http://localhost:3000',
-        methods: ['GET', 'POST'],
+        origin: ['http://localhost:3000', 'http://localhost:3002'],
+        methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
+        allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
         credentials: true
       },
       path: '/socket.io',
-      transports: ['polling', 'websocket']
+      transports: ['websocket', 'polling'],
+      serveClient: true
     });
     return server;
   }
@@ -59,6 +61,6 @@ async function bootstrap() {
   // Start server
   await app.listen(3002);
   console.log('Server running on http://localhost:3002');
-  console.log('WebSocket server running on ws://localhost:3002/api');
+  console.log('WebSocket server running on ws://localhost:3002/socket.io');
 }
 bootstrap();

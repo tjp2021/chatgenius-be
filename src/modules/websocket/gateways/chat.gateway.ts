@@ -11,7 +11,7 @@ import { MessagesService } from '../../messages/services/messages.service';
  * WebSocket Gateway for Chat Functionality
  * 
  * Configuration:
- * - WebSocket server runs on ws://localhost:3002/api/socket.io
+ * - WebSocket server runs on ws://localhost:3002/socket.io
  * - Supports both websocket and polling transports
  * - CORS enabled with credentials
  * - Ping timeout: 60s, Ping interval: 25s, Connect timeout: 10s
@@ -96,7 +96,10 @@ interface ThreadRoomPayload {
     origin: ['http://localhost:3000', 'http://localhost:3002'],
     credentials: true
   },
-  path: '/api/socket.io',
+  /** 
+   * DO NOT FUCKING TOUCH THIS CONFIG PATH. DO NOT FUCKING EDIT IT
+   * */ 
+  path: '/socket.io',
   transports: ['websocket', 'polling'],
   pingTimeout: 60000, // 60 seconds
   pingInterval: 25000, // 25 seconds

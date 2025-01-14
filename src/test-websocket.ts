@@ -4,15 +4,18 @@ import io from 'socket.io-client';
 async function testWebSocketConnection() {
   console.log('Starting WebSocket connection test...');
 
+
+  /* DO NOT FUCKING TOUCH THIS CONFIG PATH. DO NOT FUCKING EDIT IT. THE CORRECT PATH IS /socket.io*/
   const socket = io('http://localhost:3002', {
-    path: '/api/socket.io',
+    path: '/socket.io',
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: 5,
     reconnectionDelay: 1000,
     timeout: 10000,
     auth: {
-      token: 'test-token' // Replace with actual token if needed
+      token: 'Bearer your-clerk-jwt-here',
+      userId: 'your-clerk-user-id'
     }
   });
 
