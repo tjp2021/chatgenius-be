@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:manual": "ts-node src/modules/threads/test/manual-test.ts",
     "test:token": "ts-node src/modules/threads/test/generate-token.ts",
-    "test:data": "ts-node src/modules/threads/test/generate-test-data.ts"
+    "test:data": "ts-node src/modules/threads/test/generate-test-data.ts",
+    "db:seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.726.1",
@@ -62,6 +63,7 @@
     "jwks-rsa": "^3.1.0",
     "langchain": "^0.3.11",
     "node-fetch": "^3.3.2",
+    "openai": "^4.78.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.0",
