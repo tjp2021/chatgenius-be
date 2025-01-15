@@ -1,0 +1,360 @@
+import { PrismaClient, ChannelType, MessageDeliveryStatus, Prisma } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+// Define proper types for our data structures
+type UserSeed = Prisma.UserCreateInput;
+type ChannelSeed = Prisma.ChannelCreateInput;
+type MessageSeed = Prisma.MessageCreateInput;
+type ChannelMemberSeed = Prisma.ChannelMemberCreateInput;
+type ReactionSeed = Prisma.ReactionCreateInput;
+
+const users = [
+  {
+    id: "user_2dXD5kqYL9KpWQm6KjEXXd4Pqw8",
+    name: "Orlando Bishop",
+    email: "orlando.bishop@example.com",
+    imageUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Orlando",
+    isOnline: false,
+    lastSeen: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date()
+  },
+  {
+    id: "user_7mNP8rsTQ2LpVRn9MkFYYe5Rt3x",
+    name: "Paul McGavin",
+    email: "paul.mcgavin@example.com",
+    imageUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Paul",
+    isOnline: false,
+    lastSeen: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date()
+  },
+  {
+    id: "user_4hJK3npWX6MtSBc5RgHVVf7Lq9y",
+    name: "Stringer Bell",
+    email: "stringer.bell@example.com",
+    imageUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Stringer",
+    isOnline: false,
+    lastSeen: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date()
+  },
+  {
+    id: "user_9tGH1mvUZ8NqADe2ThJWWg4Hw6z",
+    name: "Marlo Stanfield",
+    email: "marlo.stanfield@example.com",
+    imageUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Marlo",
+    isOnline: false,
+    lastSeen: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date()
+  }
+]; 
+
+const GENERAL_CHANNEL_ID = "chan_general_01HNYQ6MXPVK5R74DN8H3KXWGZ";
+
+const channel = {
+  id: GENERAL_CHANNEL_ID,
+  name: "general",
+  description: "The main chat room for general discussions",
+  type: ChannelType.PUBLIC,
+  createdById: users[0].id,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  lastActivityAt: new Date(),
+  memberCount: 4
+};
+
+// Helper function to generate sequential timestamps within last 24 hours
+function generateTimestamps(count: number) {
+  const now = new Date();
+  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const interval = (now.getTime() - twentyFourHoursAgo.getTime()) / count;
+  
+  return Array.from({ length: count }, (_, i) => {
+    return new Date(twentyFourHoursAgo.getTime() + interval * i);
+  });
+}
+
+const timestamps = generateTimestamps(200);
+
+const messages = [
+  // Initial conversation starter
+  {
+    id: "msg_001",
+    content: "Yo, who do y'all think is the GOAT of rap? For me, it's gotta be Tupac, no question. Been vibing to 'Dear Mama' here at the coffee shop.",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[0].id, // Orlando
+    createdAt: timestamps[0],
+    updatedAt: timestamps[0],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  },
+  {
+    id: "msg_002",
+    content: "Man, hold up. Biggie's storytelling alone puts him above everyone else. The way he painted pictures with words... *pets bodega cat* This cat knows what I'm talking about.",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[1].id, // Paul
+    createdAt: timestamps[1],
+    updatedAt: timestamps[1],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  },
+  {
+    id: "msg_003",
+    content: "Y'all living in the past fr fr. Future changed the game completely. Hold up, these dancers at Magic City going crazy rn 🔥",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[2].id, // Stringer
+    createdAt: timestamps[2],
+    updatedAt: timestamps[2],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  },
+  {
+    id: "msg_004",
+    content: "The game? *scoffs* Y'all talking about rap while I'm counting these bands. But since you asked, Future ain't even top 10.",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[3].id, // Marlo
+    createdAt: timestamps[3],
+    updatedAt: timestamps[3],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  },
+  {
+    id: "msg_005",
+    content: "Nah, you can't dismiss Pac like that. His impact on the culture was bigger than just music. Hold up, this barista just made the perfect pour-over ☕",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[0].id, // Orlando
+    createdAt: timestamps[4],
+    updatedAt: timestamps[4],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  },
+  {
+    id: "msg_006",
+    content: "The bodega cat just knocked over my sandwich while I was typing, but I gotta say - Biggie's 'Ready to Die' is a masterpiece front to back. Name another debut album that perfect.",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[1].id, // Paul
+    createdAt: timestamps[5],
+    updatedAt: timestamps[5],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  },
+  {
+    id: "msg_007",
+    content: "FUTURE HENDRIX DROPPED MONSTER AND CHANGED THE GAME FOREVER! These dancers agree with me 💯 Just ordered another round, but y'all sleeping on Future fr",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[2].id, // Stringer
+    createdAt: timestamps[6],
+    updatedAt: timestamps[6],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  },
+  {
+    id: "msg_008",
+    content: "Y'all really in here debating while there's money to be made... But if we talking numbers, who got more platinum records than Future?",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[3].id, // Marlo
+    createdAt: timestamps[7],
+    updatedAt: timestamps[7],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  },
+  {
+    id: "msg_009",
+    content: "Pac spoke to the soul though. 'Changes' is more relevant today than ever. This coffee shop playing it right now actually 🎵",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[0].id,
+    createdAt: timestamps[8],
+    updatedAt: timestamps[8],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  },
+  {
+    id: "msg_010",
+    content: "Yo the bodega cat agrees with me about Biggie - just jumped on the counter when 'Juicy' came on. That's a sign! 🐱",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[1].id,
+    createdAt: timestamps[9],
+    updatedAt: timestamps[9],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  },
+  {
+    id: "msg_011",
+    content: "MASK OFF JUST DROPPED IN THE CLUB AND EVERYONE GOING CRAZY! Future the 🐐 no cap",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[2].id,
+    createdAt: timestamps[10],
+    updatedAt: timestamps[10],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  },
+  {
+    id: "msg_012",
+    content: "Numbers don't lie. Future got 8 consecutive #1 albums. That's business. Now let me count these stacks in peace.",
+    channelId: GENERAL_CHANNEL_ID,
+    userId: users[3].id,
+    createdAt: timestamps[11],
+    updatedAt: timestamps[11],
+    deliveryStatus: MessageDeliveryStatus.DELIVERED
+  }
+];
+
+// Channel members
+const channelMembers = users.map(user => ({
+  channelId: GENERAL_CHANNEL_ID,
+  userId: user.id,
+  role: user.id === users[0].id ? "OWNER" : "MEMBER",
+  lastReadAt: new Date(),
+  joinedAt: new Date(),
+  unreadCount: 0
+}));
+
+// Message reactions
+const reactions = [
+  {
+    messageId: "msg_001",
+    userId: users[1].id,
+    type: "🔥",
+    createdAt: new Date()
+  },
+  {
+    messageId: "msg_001",
+    userId: users[2].id,
+    type: "💯",
+    createdAt: new Date()
+  },
+  {
+    messageId: "msg_005",
+    userId: users[1].id,
+    type: "💯",
+    createdAt: timestamps[4]
+  },
+  {
+    messageId: "msg_006",
+    userId: users[0].id,
+    type: "🎯",
+    createdAt: timestamps[5]
+  },
+  {
+    messageId: "msg_007",
+    userId: users[3].id,
+    type: "🔥",
+    createdAt: timestamps[6]
+  },
+  {
+    messageId: "msg_009",
+    userId: users[1].id,
+    type: "💯",
+    createdAt: timestamps[8]
+  },
+  {
+    messageId: "msg_011",
+    userId: users[2].id,
+    type: "🔥",
+    createdAt: timestamps[10]
+  }
+  // Will add more reactions throughout the conversation
+];
+
+// Improved seeding function with proper error handling and types
+async function seed() {
+  console.log('Starting seed...');
+
+  try {
+    // Create users with proper type checking
+    const createdUsers = await Promise.all(
+      users.map((user) =>
+        prisma.user.upsert({
+          where: { id: user.id },
+          update: user,
+          create: user as UserSeed,
+        })
+      )
+    );
+    console.log(`✓ Created ${createdUsers.length} users`);
+
+    // Create channel with proper type checking
+    const createdChannel = await prisma.channel.upsert({
+      where: { id: channel.id },
+      update: channel,
+      create: channel as ChannelSeed,
+    });
+    console.log(`✓ Created channel: ${createdChannel.name}`);
+
+    // Create channel members with proper type checking
+    const createdMembers = await Promise.all(
+      channelMembers.map((member) =>
+        prisma.channelMember.upsert({
+          where: {
+            channelId_userId: {
+              channelId: member.channelId,
+              userId: member.userId,
+            },
+          },
+          update: {
+            role: member.role,
+            lastReadAt: member.lastReadAt,
+            unreadCount: member.unreadCount,
+          },
+          create: {
+            channel: { connect: { id: member.channelId } },
+            user: { connect: { id: member.userId } },
+            role: member.role,
+            lastReadAt: member.lastReadAt,
+            joinedAt: member.joinedAt,
+            unreadCount: member.unreadCount,
+          },
+        })
+      )
+    );
+    console.log(`✓ Created ${createdMembers.length} channel members`);
+
+    // Create messages with proper type checking
+    const createdMessages = await Promise.all(
+      messages.map((message) =>
+        prisma.message.upsert({
+          where: { id: message.id },
+          update: message,
+          create: {
+            ...message,
+            channel: { connect: { id: message.channelId } },
+            user: { connect: { id: message.userId } },
+          } as MessageSeed,
+        })
+      )
+    );
+    console.log(`✓ Created ${createdMessages.length} messages`);
+
+    // Create reactions with proper type checking
+    const createdReactions = await Promise.all(
+      reactions.map((reaction) =>
+        prisma.reaction.upsert({
+          where: {
+            messageId_userId_type: {
+              messageId: reaction.messageId,
+              userId: reaction.userId,
+              type: reaction.type,
+            },
+          },
+          update: reaction,
+          create: {
+            ...reaction,
+            message: { connect: { id: reaction.messageId } },
+            user: { connect: { id: reaction.userId } },
+          } as ReactionSeed,
+        })
+      )
+    );
+    console.log(`✓ Created ${createdReactions.length} reactions`);
+
+    console.log('✓ Seed completed successfully!');
+  } catch (error) {
+    console.error('Error during seeding:', error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      console.error('Prisma Error Code:', error.code);
+      console.error('Prisma Error Message:', error.message);
+    }
+    throw error;
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// Execute seed function with proper error handling
+seed()
+  .catch((error) => {
+    console.error('Fatal error during seeding:', error);
+    process.exit(1);
+  });
