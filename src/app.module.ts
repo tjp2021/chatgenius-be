@@ -11,7 +11,11 @@ import { AiService } from './lib/ai.service';
 import { AiController } from './controllers/ai.controller';
 import { PrismaModule } from './lib/prisma.module';
 import { WebSocketModule } from './modules/websocket/websocket.module';
-import { ClerkModule } from './auth/clerk.module';
+import { ThreadsModule } from './modules/threads/threads.module';
+import { UsersModule } from './modules/users/users.module';
+import { MessagesModule } from './modules/messages/messages.module';
+import { FilesModule } from './modules/files/files.module';
+import { ChannelsModule } from './modules/channels/channels.module';
 
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // WEBSOCKET MODULE CONFIGURATION - DO NOT MODIFY
@@ -27,7 +31,11 @@ import { ClerkModule } from './auth/clerk.module';
     }),
     PrismaModule,
     WebSocketModule,
-    ClerkModule,
+    ThreadsModule,
+    UsersModule,
+    MessagesModule,
+    FilesModule,
+    ChannelsModule,
   ],
   controllers: [AppController, SearchController, DataController, AiController],
   providers: [AppService, OpenAIService, PineconeService, SearchService, AiService],

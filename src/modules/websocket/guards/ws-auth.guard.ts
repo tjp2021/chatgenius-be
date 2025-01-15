@@ -3,6 +3,16 @@ import { WsException } from '@nestjs/websockets';
 import { clerkClient } from '@clerk/clerk-sdk-node';
 import { Socket } from 'socket.io';
 
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// DO NOT MODIFY THIS WEBSOCKET AUTH GUARD
+// This guard is configured and working correctly with the following setup:
+// - Gets token from socket handshake auth/headers
+// - Directly verifies with Clerk
+// - Stores userId in socket.data
+// - Works with both HTTP and WebSocket connections
+// Any changes to this configuration will break WebSocket authentication
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 @Injectable()
 export class WsAuthGuard implements CanActivate {
   private readonly logger = new Logger(WsAuthGuard.name);
@@ -110,4 +120,8 @@ export class WsAuthGuard implements CanActivate {
       throw new WsException('Unauthorized');
     }
   }
-} 
+}
+
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// END OF WEBSOCKET AUTH GUARD - DO NOT MODIFY ANYTHING IN THIS FILE
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
