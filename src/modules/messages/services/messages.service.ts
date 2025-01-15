@@ -57,13 +57,21 @@ export class MessagesService {
             },
           },
         },
+        _count: {
+          select: {
+            replies: true,
+          },
+        },
       },
     });
 
     const nextCursor = messages.length === limit ? messages[messages.length - 1].id : null;
 
     return {
-      messages,
+      messages: messages.map(message => ({
+        ...message,
+        hasReplies: message._count.replies > 0,
+      })),
       nextCursor,
     };
   }
