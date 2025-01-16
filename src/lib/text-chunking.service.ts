@@ -9,16 +9,16 @@ interface ChunkMetadata {
   channelId: string;
 }
 
-interface TextChunk {
+export interface TextChunk {
   content: string;
   metadata: ChunkMetadata;
 }
 
 @Injectable()
 export class TextChunkingService {
-  // Optimal chunk size based on OpenAI's embedding model
   private readonly TARGET_CHUNK_SIZE = 512;
   private readonly MIN_CHUNK_SIZE = 100;
+  private readonly DEFAULT_OVERLAP = 50;
 
   private createChunk(content: string, metadata: Omit<ChunkMetadata, 'chunkIndex' | 'totalChunks'>, index: number): TextChunk {
     return {
@@ -53,51 +53,57 @@ export class TextChunkingService {
 
   chunkText(
     text: string,
-    metadata: Omit<ChunkMetadata, 'chunkIndex' | 'totalChunks'>
+    metadata: Omit<ChunkMetadata, 'chunkIndex' | 'totalChunks'>,
+    overlap: number = this.DEFAULT_OVERLAP
   ): TextChunk[] {
     if (!text?.trim()) {
       return [];
     }
 
-    // Split into sentences first for semantic coherence
-    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+    // Normalize text: replace multiple newlines with single newline and remove excessive whitespace
+    const normalizedText = text
+      .replace(/\n\s+/g, '\n')  // Replace newline + whitespace with just newline
+      .replace(/\s+/g, ' ')     // Replace multiple spaces with single space
+      .trim();
+
+    const sentences = normalizedText.match(/[^.!?]+[.!?]+/g) || [normalizedText];
     const chunks: TextChunk[] = [];
     let currentChunk = '';
+    let overlapText = '';
 
     for (const sentence of sentences) {
       const trimmedSentence = sentence.trim();
       
-      // If sentence is longer than target size, split it
       if (trimmedSentence.length > this.TARGET_CHUNK_SIZE) {
-        // First, add current chunk if not empty
         if (currentChunk.trim()) {
           chunks.push(this.createChunk(currentChunk, metadata, chunks.length));
-          currentChunk = '';
+          overlapText = currentChunk.split(' ').slice(-overlap).join(' ');
+          currentChunk = overlapText;
         }
         
-        // Split and add long sentence chunks
         const sentenceChunks = this.splitLongSentence(trimmedSentence);
-        sentenceChunks.forEach(chunk => {
-          chunks.push(this.createChunk(chunk, metadata, chunks.length));
+        sentenceChunks.forEach((chunk, idx) => {
+          const chunkWithOverlap = (idx > 0 ? overlapText + ' ' : '') + chunk;
+          chunks.push(this.createChunk(chunkWithOverlap, metadata, chunks.length));
+          overlapText = chunk.split(' ').slice(-overlap).join(' ');
         });
+        currentChunk = overlapText;
         continue;
       }
 
-      // Handle normal-sized sentences
       if (currentChunk.length + trimmedSentence.length > this.TARGET_CHUNK_SIZE && 
           currentChunk.length >= this.MIN_CHUNK_SIZE) {
         chunks.push(this.createChunk(currentChunk, metadata, chunks.length));
-        currentChunk = '';
+        overlapText = currentChunk.split(' ').slice(-overlap).join(' ');
+        currentChunk = overlapText;
       }
       currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
     }
 
-    // Add final chunk if not empty
     if (currentChunk.trim()) {
       chunks.push(this.createChunk(currentChunk, metadata, chunks.length));
     }
 
-    // Update total chunks count
     return chunks.map(chunk => ({
       ...chunk,
       metadata: {
@@ -108,9 +114,39 @@ export class TextChunkingService {
   }
 
   reconstructText(chunks: TextChunk[]): string {
-    return chunks
-      .sort((a, b) => a.metadata.chunkIndex - b.metadata.chunkIndex)
-      .map(chunk => chunk.content)
-      .join(' ');
+    if (chunks.length === 0) return '';
+    if (chunks.length === 1) return chunks[0].content;
+
+    // Sort chunks by index
+    const sortedChunks = chunks.sort((a, b) => a.metadata.chunkIndex - b.metadata.chunkIndex);
+    
+    // Start with the first chunk
+    let result = sortedChunks[0].content;
+
+    // For each subsequent chunk, find where the overlap begins and append the rest
+    for (let i = 1; i < sortedChunks.length; i++) {
+      const currentChunk = sortedChunks[i].content.trim();
+      const prevChunk = sortedChunks[i - 1].content.trim();
+      
+      // Get the last N words of the previous chunk to find the overlap
+      const lastWords = prevChunk.split(' ').slice(-this.DEFAULT_OVERLAP).join(' ');
+      
+      // Find where these words appear in the current chunk
+      const overlapIndex = currentChunk.indexOf(lastWords);
+      
+      if (overlapIndex >= 0) {
+        // Append only the content after the overlap, ensuring single space
+        const newContent = currentChunk.slice(overlapIndex + lastWords.length).trim();
+        if (newContent) {
+          result += ' ' + newContent;
+        }
+      } else {
+        // If no overlap found, just append with a space
+        result += ' ' + currentChunk;
+      }
+    }
+
+    // Normalize spaces
+    return result.replace(/\s+/g, ' ').trim();
   }
 } 

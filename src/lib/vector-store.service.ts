@@ -1,19 +1,33 @@
 import { Injectable } from '@nestjs/common';
 import { PineconeService, Vector, QueryOptions } from './pinecone.service';
 import { EmbeddingService } from './embedding.service';
+import { TextChunkingService, TextChunk } from './text-chunking.service';
+import { ScoredPineconeRecord } from '@pinecone-database/pinecone';
 
-interface Message {
+export interface Message {
   id: string;
   content: string;
   metadata: MessageMetadata;
 }
 
-interface MessageMetadata {
+export interface MessageMetadata {
   channelId: string;
   userId: string;
   timestamp: string;
   replyTo?: string;
   [key: string]: any;
+}
+
+export interface MessageBatch {
+  id: string;
+  content: string;
+  metadata: MessageMetadata;
+}
+
+interface ChunkMetadata extends MessageMetadata {
+  chunkIndex: number;
+  totalChunks: number;
+  messageId: string;  // Reference to the original message
 }
 
 interface SearchOptions {
@@ -23,18 +37,32 @@ interface SearchOptions {
   minScore?: number;
 }
 
+interface BatchResult {
+  messageId: string;
+  success: boolean;
+  error?: string;
+}
+
+interface PineconeChunkMetadata extends ChunkMetadata {
+  content: string;
+  chunkIndex: number;
+}
+
 @Injectable()
 export class VectorStoreService {
   // Decay factor for time-based scoring (can be adjusted)
   private readonly TIME_DECAY_FACTOR = 0.1;
   // Channel relevance boost factor
   private readonly CHANNEL_BOOST_FACTOR = 1.5;
+  // Add thread boost factor
+  private readonly THREAD_BOOST_FACTOR = 1.3;
   // Default minimum score threshold
   private readonly DEFAULT_MIN_SCORE = 0.7;
 
   constructor(
     private pinecone: PineconeService,
-    private embedding: EmbeddingService
+    private embedding: EmbeddingService,
+    private textChunking: TextChunkingService
   ) {}
 
   private calculateTimeScore(timestamp: string): number {
@@ -51,19 +79,93 @@ export class VectorStoreService {
     return messageChannelId === searchChannelId ? this.CHANNEL_BOOST_FACTOR : 1;
   }
 
-  async storeMessage(id: string, content: string, metadata: MessageMetadata) {
-    if (!metadata.channelId) {
-      throw new Error('channelId is required in metadata');
+  private calculateThreadScore(messageId: string, threadMessages: string[]): number {
+    return threadMessages.includes(messageId) ? this.THREAD_BOOST_FACTOR : 1;
+  }
+
+  private async storeChunk(chunk: TextChunk): Promise<void> {
+    const vector = await this.embedding.createEmbedding(chunk.content);
+    await this.pinecone.upsertVector(
+      `${chunk.metadata.messageId}_chunk_${chunk.metadata.chunkIndex}`,
+      vector,
+      chunk.metadata
+    );
+  }
+
+  private async storeChunkBatch(chunks: TextChunk[]): Promise<void> {
+    // Create embeddings in parallel
+    const embeddings = await Promise.all(
+      chunks.map(chunk => this.embedding.createEmbedding(chunk.content))
+    );
+
+    // Prepare vectors with metadata
+    const vectors: Vector[] = chunks.map((chunk, i) => ({
+      id: `${chunk.metadata.messageId}_chunk_${chunk.metadata.chunkIndex}`,
+      values: embeddings[i],
+      metadata: chunk.metadata
+    }));
+
+    // Store batch in Pinecone
+    await this.pinecone.upsertVectors(vectors);
+  }
+
+  async storeMessageBatch(messages: MessageBatch[]): Promise<BatchResult[]> {
+    if (messages.length === 0) return [];
+
+    // Validate all messages have channelId
+    const invalidMessages = messages.filter(msg => !msg.metadata.channelId);
+    if (invalidMessages.length > 0) {
+      throw new Error('All messages must have channelId in metadata');
     }
 
-    // 1. Create embedding
-    const vector = await this.embedding.createEmbedding(content);
+    const results: BatchResult[] = [];
+    const batchSize = 100; // Process chunks in batches of 100 for efficiency
     
-    // 2. Store in Pinecone with required metadata
-    await this.pinecone.upsertVector(id, vector, {
-      ...metadata,
-      timestamp: metadata.timestamp || new Date().toISOString()
-    });
+    try {
+      // 1. Create chunks for all messages in parallel
+      const messageChunks = await Promise.all(
+        messages.map(async (msg) => ({
+          messageId: msg.id,
+          chunks: this.textChunking.chunkText(msg.content, {
+            messageId: msg.id,
+            ...msg.metadata
+          })
+        }))
+      );
+
+      // 2. Process chunks in batches
+      const allChunks = messageChunks.flatMap(mc => mc.chunks);
+      
+      for (let i = 0; i < allChunks.length; i += batchSize) {
+        const chunkBatch = allChunks.slice(i, i + batchSize);
+        await this.storeChunkBatch(chunkBatch);
+      }
+
+      // 3. Record successful results
+      results.push(...messages.map(msg => ({
+        messageId: msg.id,
+        success: true
+      })));
+
+    } catch (error) {
+      // If batch operation fails, mark all as failed
+      results.push(...messages.map(msg => ({
+        messageId: msg.id,
+        success: false,
+        error: error.message
+      })));
+    }
+
+    return results;
+  }
+
+  async storeMessage(id: string, content: string, metadata: MessageMetadata) {
+    const results = await this.storeMessageBatch([{ id, content, metadata }]);
+    const result = results[0];
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to store message');
+    }
   }
 
   async storeMessages(messages: Message[]) {
@@ -106,31 +208,116 @@ export class VectorStoreService {
         { channelId: { $in: channelIds } } : 
         undefined;
     
-    // 3. Search in Pinecone with channel filter
-    const results = await this.pinecone.queryVectors(vector, topK, { filter });
+    // 3. Search in Pinecone with increased topK to account for chunks
+    const chunkResults = await this.pinecone.queryVectors(vector, topK * 3, { filter }) as {
+      matches?: ScoredPineconeRecord<PineconeChunkMetadata>[];
+      namespace: string;
+    };
     
-    // 4. Transform results and include context
-    const messages = results.matches?.map(match => {
-      const timeScore = this.calculateTimeScore(match.metadata.timestamp.toString());
-      const channelScore = this.calculateChannelScore(
-        match.metadata.channelId.toString(),
-        channelId
-      );
-      const combinedScore = match.score * timeScore * channelScore;
-      
-      return {
-        id: match.id,
-        score: combinedScore,
-        metadata: match.metadata,
-        originalScore: match.score,
-        timeScore,
-        channelScore
-      };
-    }).filter(msg => msg.score >= minScore) || [];
+    // 4. Group chunks by original message ID and calculate scores
+    const messageMap = new Map<string, {
+      chunks: ScoredPineconeRecord<PineconeChunkMetadata>[],
+      maxScore: number,
+      metadata: PineconeChunkMetadata
+    }>();
 
-    // 5. For messages with replyTo, include the context
-    const messagesWithContext = await Promise.all(
-      messages.map(async (msg) => {
+    // Track thread messages for scoring
+    const threadMessages = new Set<string>();
+    chunkResults.matches?.forEach(match => {
+      const metadata = match.metadata as PineconeChunkMetadata;
+      const messageId = metadata.messageId?.toString() || match.id;
+      if (metadata.replyTo) {
+        threadMessages.add(metadata.replyTo);
+        threadMessages.add(messageId);
+      }
+    });
+
+    chunkResults.matches?.forEach(match => {
+      const metadata = match.metadata as PineconeChunkMetadata;
+      const messageId = metadata.messageId?.toString() || match.id;
+      const existing = messageMap.get(messageId) || { 
+        chunks: [], 
+        maxScore: 0, 
+        metadata: {
+          ...metadata,
+          messageId
+        }
+      };
+      
+      // Only add chunk if we don't already have one with same index
+      const chunkIndex = metadata.chunkIndex;
+      const hasChunkWithIndex = existing.chunks.some(
+        c => (c.metadata as PineconeChunkMetadata).chunkIndex === chunkIndex
+      );
+
+      if (!hasChunkWithIndex) {
+        existing.chunks.push(match);
+      } else {
+        // If we have a chunk with this index, keep the one with higher score
+        const existingChunk = existing.chunks.find(
+          c => (c.metadata as PineconeChunkMetadata).chunkIndex === chunkIndex
+        );
+        if (match.score > existingChunk.score) {
+          existing.chunks = existing.chunks.filter(
+            c => (c.metadata as PineconeChunkMetadata).chunkIndex !== chunkIndex
+          );
+          existing.chunks.push(match);
+        }
+      }
+
+      existing.maxScore = Math.max(existing.maxScore, match.score);
+      messageMap.set(messageId, existing);
+    });
+
+    // 5. Transform results and include context
+    const messages = Array.from(messageMap.values())
+      .filter(({ maxScore }) => maxScore >= minScore)
+      .map(({ chunks, maxScore, metadata }) => {
+        const timeScore = this.calculateTimeScore(metadata.timestamp.toString());
+        const channelScore = this.calculateChannelScore(
+          metadata.channelId.toString(),
+          channelId
+        );
+        const messageId = metadata.messageId.toString();
+        const threadScore = this.calculateThreadScore(messageId, Array.from(threadMessages));
+        const combinedScore = maxScore * timeScore * channelScore * threadScore;
+
+        // Sort chunks by index before reconstruction
+        const sortedChunks = chunks.sort(
+          (a, b) => (a.metadata as PineconeChunkMetadata).chunkIndex - (b.metadata as PineconeChunkMetadata).chunkIndex
+        );
+
+        // Reconstruct full message content if chunks exist
+        const reconstructedContent = chunks.length > 1 ? 
+          this.textChunking.reconstructText(
+            sortedChunks.map(chunk => ({
+              content: (chunk.metadata as PineconeChunkMetadata).content,
+              metadata: chunk.metadata as PineconeChunkMetadata
+            }))
+          ) : (chunks[0].metadata as PineconeChunkMetadata).content || '';
+        
+        return {
+          id: metadata.messageId.toString(),
+          content: reconstructedContent,
+          score: combinedScore,
+          metadata: {
+            ...metadata,
+            originalScore: maxScore,
+            timeScore,
+            channelScore,
+            threadScore
+          }
+        };
+      });
+
+    // 6. Sort by combined score and limit to original topK
+    const sortedMessages = messages
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+
+    // 7. Include context for messages with replyTo
+    return Promise.all(
+      sortedMessages.map(async (msg) => {
         const replyToId = msg.metadata?.replyTo;
         if (replyToId && typeof replyToId === 'string') {
           const parentMessage = await this.pinecone.getVectorById(replyToId);
@@ -150,8 +337,5 @@ export class VectorStoreService {
         return msg;
       })
     );
-
-    // 6. Sort by combined score
-    return messagesWithContext.sort((a, b) => b.score - a.score);
   }
 } 

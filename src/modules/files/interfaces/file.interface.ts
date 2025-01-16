@@ -4,6 +4,8 @@ export interface File {
   type: string;
   size: number;
   url: string;
+  textContent?: string | null;
+  vectorIds?: string[];
   userId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -13,4 +15,4 @@ export interface FileUploadResponse {
   id: string;
   name: string;
   url: string;
-} 
+}

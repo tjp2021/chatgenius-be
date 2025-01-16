@@ -16,13 +16,13 @@ export class S3Service {
 
   constructor(private readonly configService: ConfigService) {
     this.s3Client = new S3Client({
-      region: this.configService.get<string>('AWS_REGION'),
+      region: 'us-east-2',
       credentials: {
-        accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY'),
-        secretAccessKey: this.configService.get<string>('AWS_SECRET_KEY'),
+        accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID'),
+        secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY'),
       },
     });
-    this.bucket = this.configService.get<string>('S3_BUCKET_NAME');
+    this.bucket = 'yng-chatgenius-files';
   }
 
   async uploadFile(file: Express.Multer.File, key: string): Promise<string> {

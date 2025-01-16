@@ -89,6 +89,7 @@ model Message {
   channelId     String
   userId        String
   replyToId     String?
+  vectorId      String?   // Vector ID for semantic search
   deliveryStatus MessageDeliveryStatus @default(SENT)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -197,17 +198,19 @@ model ChannelNavigation {
 }
 
 model File {
-  id        String   @id @default(uuid())
-  name      String
-  type      String
-  size      Int
-  url       String
-  userId    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  type        String
+  size        Int
+  url         String
+  textContent String?
+  vectorIds   String[] // Array of vector IDs for chunked content
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("files")
 }

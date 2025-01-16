@@ -6,22 +6,28 @@ import type { PrismaClient } from '.prisma/client';
 
 interface VectorResult {
   id: string;
+  content: string;
   score: number;
   metadata: {
     channelId: string;
     content: string;
-    [key: string]: any;
+    originalScore: number;
+    timeScore: number;
+    channelScore: number;
+    threadScore: number;
+    chunkIndex: number;
+    totalChunks: number;
+    messageId: string;
+    userId: string;
+    timestamp: string;
+    replyTo?: string;
   };
-  originalScore: number;
-  timeScore: number;
-  channelScore: number;
   context?: {
     parentMessage?: {
       id: string;
       metadata: {
         content: string;
         channelId: string;
-        [key: string]: any;
       };
     };
   };
@@ -44,6 +50,7 @@ interface ContextMessage {
   originalScore: number;
   timeScore: number;
   channelScore: number;
+  threadScore: number;
   context?: {
     parentMessage?: {
       id: string;
@@ -116,8 +123,27 @@ export class ContextWindowService {
         minScore
       }) as VectorResult[];
 
+      // Track thread messages for inclusion
+      const threadMessages = new Set<string>();
+      for (const vectorResult of vectorResults) {
+        // Add messages that meet score threshold
+        if (vectorResult.score >= minScore) {
+          threadMessages.add(vectorResult.id);
+        }
+        // Add messages that are part of threads
+        if (vectorResult.metadata.replyTo) {
+          threadMessages.add(vectorResult.metadata.replyTo);
+          threadMessages.add(vectorResult.id);
+        }
+      }
+
       // Process messages in order
       for (const vectorResult of vectorResults) {
+        // Skip messages below minimum score unless they're part of a thread
+        if (vectorResult.score < minScore && !threadMessages.has(vectorResult.id)) {
+          continue;
+        }
+
         const message = await this.getMessageContent(vectorResult.id);
         if (!message) continue;
 
@@ -136,15 +162,23 @@ export class ContextWindowService {
 
         // Add message
         result.channels.add(message.channelId);
+
+        // Calculate boosted score
+        const baseScore = vectorResult.score;
+        const channelBoost = message.channelId === channelId ? 1.5 : 1.0;
+        const threadBoost = threadMessages.has(vectorResult.id) ? 1.3 : 1.0;
+        const boostedScore = baseScore * channelBoost * threadBoost;
+
         const contextMessage: ContextMessage = {
           id: vectorResult.id,
           content: message.content,
           createdAt: message.createdAt,
           channelId: message.channelId,
-          score: vectorResult.score,
-          originalScore: vectorResult.originalScore,
-          timeScore: vectorResult.timeScore,
-          channelScore: message.channelId === channelId ? 1.5 : 1.0
+          score: boostedScore,
+          originalScore: vectorResult.metadata.originalScore,
+          timeScore: vectorResult.metadata.timeScore,
+          channelScore: channelBoost,
+          threadScore: threadBoost
         };
 
         // Add parent message context if available
