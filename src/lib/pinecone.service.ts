@@ -1,44 +1,42 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Pinecone } from '@pinecone-database/pinecone';
-
-interface QueryOptions {
-  vector: number[];
-  topK: number;
-  includeMetadata: boolean;
-  filter?: Record<string, any>;
-}
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
-export class PineconeService {
+export class PineconeService implements OnModuleInit {
   private pinecone: Pinecone;
   private readonly indexName: string;
 
   constructor(private configService: ConfigService) {
-    this.pinecone = new Pinecone({
-      apiKey: this.configService.get<string>('PINECONE_API_KEY'),
+    this.pinecone = new Pinecone({ 
+      apiKey: this.configService.get<string>('PINECONE_API_KEY')
     });
-    this.indexName = 'chatgenius-1536';
+    this.indexName = this.configService.get<string>('PINECONE_INDEX_NAME');
   }
 
-  async query(options: QueryOptions) {
-    const index = this.pinecone.index(this.indexName);
-    return index.query({
-      vector: options.vector,
-      topK: options.topK,
-      includeMetadata: options.includeMetadata,
-      filter: options.filter
-    });
+  async onModuleInit() {
+    // Verify connection
+    const indexes = await this.pinecone.listIndexes();
+    if (!indexes.indexes?.some(index => index.name === this.indexName)) {
+      throw new Error(`Index ${this.indexName} not found`);
+    }
   }
 
-  async upsert(id: string, vector: number[], metadata: Record<string, any>) {
-    const index = this.pinecone.index(this.indexName);
-    await index.upsert([
-      {
-        id,
-        values: vector,
-        metadata,
-      },
-    ]);
+  async upsertVector(id: string, values: number[], metadata: any) {
+    const index = this.pinecone.Index(this.indexName);
+    await index.upsert([{
+      id,
+      values,
+      metadata
+    }]);
+  }
+
+  async queryVectors(values: number[], topK: number = 5) {
+    const index = this.pinecone.Index(this.indexName);
+    return await index.query({
+      vector: values,
+      topK,
+      includeMetadata: true
+    });
   }
 } 

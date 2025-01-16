@@ -211,3 +211,13 @@ model File {
 
   @@map("files")
 }
+
+model UserAvatar {
+  id        String   @id @default(uuid())
+  userId    String
+  analysis  Json     // Store message analysis
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId])
+}
