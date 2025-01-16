@@ -75,4 +75,49 @@ describe('PineconeService', () => {
       });
     });
   });
+
+  describe('getVectorById', () => {
+    it('should retrieve vector by id', async () => {
+      const mockVector = {
+        id: 'test-id',
+        score: 1.0,
+        metadata: { content: 'test content' }
+      };
+      const mockQuery = jest.fn().mockResolvedValue({
+        matches: [mockVector]
+      });
+      const mockIndex = { query: mockQuery };
+      jest.spyOn(service['pinecone'], 'Index').mockReturnValue(mockIndex as any);
+
+      const result = await service.getVectorById('test-id');
+
+      expect(mockQuery).toHaveBeenCalledWith({
+        vector: expect.any(Array),
+        topK: 1,
+        includeMetadata: true,
+        filter: { id: { $eq: 'test-id' } }
+      });
+      expect(result).toEqual(mockVector);
+    });
+
+    it('should return undefined when vector not found', async () => {
+      const mockQuery = jest.fn().mockResolvedValue({
+        matches: []
+      });
+      const mockIndex = { query: mockQuery };
+      jest.spyOn(service['pinecone'], 'Index').mockReturnValue(mockIndex as any);
+
+      const result = await service.getVectorById('non-existent-id');
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should handle query errors', async () => {
+      const mockQuery = jest.fn().mockRejectedValue(new Error('Query failed'));
+      const mockIndex = { query: mockQuery };
+      jest.spyOn(service['pinecone'], 'Index').mockReturnValue(mockIndex as any);
+
+      await expect(service.getVectorById('test-id')).rejects.toThrow('Query failed');
+    });
+  });
 }); 

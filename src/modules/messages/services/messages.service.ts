@@ -3,14 +3,10 @@ import { PrismaService } from '../../../lib/prisma.service';
 import { CreateMessageDto } from '../dto/create-message.dto';
 import { UpdateMessageDto } from '../dto/update-message.dto';
 import { MessageDeliveryStatus } from '@prisma/client';
-import { VectorStoreService } from '../../../lib/vector-store.service';
 
 @Injectable()
 export class MessagesService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly vectorStore: VectorStoreService
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async getMessages(channelId: string, userId: string, limit = 50, cursor?: string) {
     // Verify user has access to channel
@@ -159,19 +155,6 @@ export class MessagesService {
         },
       },
     });
-
-    // Index message for vector search
-    try {
-      await this.vectorStore.storeMessage(message.id, message.content, {
-        userId: message.userId,
-        channelId: message.channelId,
-        createdAt: message.createdAt,
-        replyToId: message.replyToId
-      });
-    } catch (error) {
-      console.error('Failed to index message:', error);
-      // Don't throw - indexing failure shouldn't block message creation
-    }
 
     return message;
   }

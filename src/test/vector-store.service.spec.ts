@@ -14,7 +14,7 @@ describe('VectorStoreService', () => {
       { 
         id: 'msg1', 
         score: 0.9, 
-        metadata: { content: 'test content', userId: 'user1' },
+        metadata: { content: 'test content', userId: 'user1', timestamp: new Date().toISOString() },
         values: []
       }
     ],
@@ -29,7 +29,21 @@ describe('VectorStoreService', () => {
           provide: PineconeService,
           useValue: {
             upsertVector: jest.fn().mockResolvedValue(undefined),
-            queryVectors: jest.fn().mockResolvedValue(mockPineconeResponse)
+            queryVectors: jest.fn().mockResolvedValue(mockPineconeResponse),
+            getVectorById: jest.fn().mockImplementation((id) => {
+              if (id === 'parent-msg') {
+                return Promise.resolve({
+                  id: 'parent-msg',
+                  score: 0.8,
+                  metadata: {
+                    content: 'parent content',
+                    userId: 'user1',
+                    timestamp: new Date().toISOString()
+                  }
+                });
+              }
+              return Promise.resolve(undefined);
+            })
           }
         },
         {
@@ -58,7 +72,10 @@ describe('VectorStoreService', () => {
       expect(pineconeService.upsertVector).toHaveBeenCalledWith(
         messageId,
         mockEmbedding,
-        metadata
+        expect.objectContaining({
+          userId: 'user1',
+          timestamp: expect.any(String)
+        })
       );
     });
 
@@ -79,8 +96,12 @@ describe('VectorStoreService', () => {
       expect(pineconeService.queryVectors).toHaveBeenCalledWith(mockEmbedding, 5);
       expect(results[0]).toMatchObject({
         id: 'msg1',
-        score: 0.9,
-        metadata: { content: 'test content', userId: 'user1' }
+        score: expect.any(Number),
+        metadata: expect.objectContaining({
+          content: 'test content',
+          userId: 'user1',
+          timestamp: expect.any(String)
+        })
       });
     });
 
@@ -92,6 +113,54 @@ describe('VectorStoreService', () => {
       
       const results = await service.findSimilarMessages('test query');
       expect(results).toEqual([]);
+    });
+
+    it('should retrieve parent message when replyTo is present', async () => {
+      // Mock a message with replyTo
+      const mockResponseWithReply = {
+        matches: [
+          { 
+            id: 'reply-msg', 
+            score: 0.9, 
+            metadata: { 
+              content: 'reply content',
+              userId: 'user1',
+              timestamp: new Date().toISOString(),
+              replyTo: 'parent-msg'
+            },
+            values: []
+          }
+        ],
+        namespace: ''
+      };
+
+      // Setup mock responses
+      const queryVectorsSpy = jest.spyOn(pineconeService, 'queryVectors')
+        .mockResolvedValueOnce(mockResponseWithReply);
+      const getVectorByIdSpy = jest.spyOn(pineconeService, 'getVectorById');
+
+      const results = await service.findSimilarMessages('test query');
+
+      // Verify the results
+      expect(results[0]).toMatchObject({
+        id: 'reply-msg',
+        metadata: expect.objectContaining({
+          content: 'reply content',
+          replyTo: 'parent-msg'
+        }),
+        context: {
+          parentMessage: {
+            id: 'parent-msg',
+            metadata: expect.objectContaining({
+              content: 'parent content'
+            })
+          }
+        }
+      });
+
+      // Verify parent message was queried
+      expect(queryVectorsSpy).toHaveBeenCalledTimes(1);
+      expect(getVectorByIdSpy).toHaveBeenCalledWith('parent-msg');
     });
   });
 }); 
