@@ -3,9 +3,6 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SearchController } from './controllers/search.controller';
-import { OpenAIService } from './lib/openai.service';
-import { PineconeService } from './lib/pinecone.service';
-import { SearchService } from './lib/search.service';
 import { DataController } from './controllers/data.controller';
 import { AiService } from './lib/ai.service';
 import { AiController } from './controllers/ai.controller';
@@ -16,8 +13,7 @@ import { UsersModule } from './modules/users/users.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { FilesModule } from './modules/files/files.module';
 import { ChannelsModule } from './modules/channels/channels.module';
-import { EmbeddingService } from './lib/embedding.service';
-import { VectorStoreService } from './lib/vector-store.service';
+import { VectorStoreModule } from './lib/vector-store.module';
 
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // WEBSOCKET MODULE CONFIGURATION - DO NOT MODIFY
@@ -38,16 +34,12 @@ import { VectorStoreService } from './lib/vector-store.service';
     MessagesModule,
     FilesModule,
     ChannelsModule,
+    VectorStoreModule,
   ],
   controllers: [AppController, SearchController, DataController, AiController],
   providers: [
     AppService,
-    OpenAIService,
-    PineconeService,
-    SearchService,
     AiService,
-    EmbeddingService,
-    VectorStoreService
   ],
 })
 export class AppModule {}

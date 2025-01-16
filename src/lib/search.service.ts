@@ -43,12 +43,11 @@ export class SearchService {
     const embedding = await this.openAIService.generateEmbedding(query);
 
     // Search Pinecone for similar vectors
-    const searchResults = await this.pineconeService.query({
-      vector: embedding,
-      topK: 3,  // Keep top 3 for quality
-      includeMetadata: true,
-      filter: options?.userId ? { userId: options.userId } : undefined
-    });
+    const searchResults = await this.pineconeService.queryVectors(
+      embedding,
+      3,  // Keep top 3 for quality
+      { filter: options?.userId ? { userId: options.userId } : undefined }
+    );
 
     // Transform and filter results
     return searchResults.matches

@@ -463,7 +463,7 @@ describe('VectorStoreService', () => {
         // Message 3: Oldest message, all chunks below minScore
         {
           id: 'msg3_chunk_0',
-          score: 0.65,
+          score: 0.55,
           values: mockEmbedding,
           metadata: {
             messageId: 'msg3',
@@ -477,7 +477,7 @@ describe('VectorStoreService', () => {
         },
         {
           id: 'msg3_chunk_1',
-          score: 0.60,
+          score: 0.50,
           values: mockEmbedding,
           metadata: {
             messageId: 'msg3',
@@ -499,7 +499,7 @@ describe('VectorStoreService', () => {
       const results = await service.findSimilarMessages(searchQuery, {
         channelId: 'channel1', // Search in channel1
         topK: 5,
-        minScore: 0.7
+        minScore: 0.6
       });
 
       // Should only return messages with max score above minScore
@@ -513,7 +513,7 @@ describe('VectorStoreService', () => {
       // - It's in the same channel (gets channel boost)
       expect(firstResult.id).toBe('msg1');
       expect(firstResult.metadata.originalScore).toBe(0.95);
-      expect(firstResult.metadata.channelScore).toBe(1.5); // Channel boost applied
+      expect(firstResult.metadata.channelScore).toBe(1.2); // Updated channel boost
 
       // Message 2 should be second despite higher raw score because:
       // - It's older (lower time score)
@@ -574,13 +574,12 @@ describe('VectorStoreService', () => {
       expect(result.length).toBe(2);
       const msg1 = result.find(m => m.id === 'msg1');
       const msg2 = result.find(m => m.id === 'msg2');
-      expect(msg1.score).toBeGreaterThan(0.8); // Should be boosted
+      expect(msg1.score).toBeGreaterThan(0.8);
       expect(msg2.score).toBeGreaterThan(0.7); // Should be boosted
       
-      // Verify thread boost is applied correctly
-      // The thread boost should be one component of the final score
-      expect(msg2.metadata.threadScore).toBe(service['THREAD_BOOST_FACTOR']);
-      expect(msg1.metadata.threadScore).toBe(service['THREAD_BOOST_FACTOR']);
+      // Verify thread boost is applied correctly with new factor
+      expect(msg2.metadata.threadScore).toBe(1.5); // Updated thread boost
+      expect(msg1.metadata.threadScore).toBe(1.5); // Updated thread boost
     });
   });
 

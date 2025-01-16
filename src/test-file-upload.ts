@@ -5,6 +5,11 @@ import { PrismaService } from './lib/prisma.service';
 import { config } from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
+import { TextChunkingService } from './lib/text-chunking.service';
+import { VectorStoreService } from './lib/vector-store.service';
+import { OpenAIService } from './lib/openai.service';
+import { PineconeService } from './lib/pinecone.service';
+import { EmbeddingService } from './lib/embedding.service';
 
 async function testFileUpload() {
   // Load environment variables from existing .env
@@ -14,7 +19,12 @@ async function testFileUpload() {
   const configService = new ConfigService();
   const prismaService = new PrismaService();
   const s3Service = new S3Service(configService);
-  const filesService = new FilesService(prismaService, s3Service);
+  const openAIService = new OpenAIService(configService);
+  const pineconeService = new PineconeService(configService);
+  const embeddingService = new EmbeddingService(configService);
+  const textChunkingService = new TextChunkingService();
+  const vectorStoreService = new VectorStoreService(pineconeService, embeddingService, textChunkingService);
+  const filesService = new FilesService(prismaService, s3Service, textChunkingService, vectorStoreService);
 
   try {
     // First, get a valid user ID from the database

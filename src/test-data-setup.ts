@@ -45,7 +45,7 @@ async function main() {
 
     console.log('Storing vectors in Pinecone...');
     for (let i = 0; i < TEST_MESSAGES.length; i++) {
-      await pineconeService.upsert(
+      await pineconeService.upsertVector(
         TEST_MESSAGES[i].id,
         embeddings[i],
         {

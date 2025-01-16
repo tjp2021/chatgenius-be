@@ -25,7 +25,7 @@ async function main() {
   try {
     // Test upsert
     console.log('Testing vector upsert...');
-    await pineconeService.upsert(
+    await pineconeService.upsertVector(
       testVector.id,
       testVector.vector,
       testVector.metadata
@@ -34,11 +34,10 @@ async function main() {
 
     // Test query
     console.log('\nTesting vector query...');
-    const results = await pineconeService.query({
-      vector: testVector.vector,
-      topK: 1,
-      includeMetadata: true,
-    });
+    const results = await pineconeService.queryVectors(
+      testVector.vector,
+      1
+    );
     console.log('Query results:', results.matches);
 
     console.log('\n✅ All tests completed successfully!');

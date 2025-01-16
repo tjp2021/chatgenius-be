@@ -11,9 +11,34 @@ describe('RAG Search Tests', () => {
   const mockEmbedding = Array(1536).fill(0.1);
   const currentTime = new Date().toISOString();
   const mockMessages = [
-    { id: 'msg1', content: 'How do I reset my password?', metadata: { userId: 'user1', timestamp: currentTime } },
-    { id: 'msg2', content: 'The password reset option is in settings.', metadata: { userId: 'user2', timestamp: currentTime, replyTo: 'msg1' } },
-    { id: 'msg3', content: 'What time is lunch today?', metadata: { userId: 'user3', timestamp: currentTime } },
+    { 
+      id: 'msg1', 
+      content: 'How do I reset my password?', 
+      metadata: { 
+        userId: 'user1', 
+        channelId: 'channel1',
+        timestamp: currentTime 
+      } 
+    },
+    { 
+      id: 'msg2', 
+      content: 'The password reset option is in settings.', 
+      metadata: { 
+        userId: 'user2', 
+        channelId: 'channel1',
+        timestamp: currentTime, 
+        replyTo: 'msg1' 
+      } 
+    },
+    { 
+      id: 'msg3', 
+      content: 'What time is lunch today?', 
+      metadata: { 
+        userId: 'user3', 
+        channelId: 'channel1',
+        timestamp: currentTime 
+      } 
+    },
   ];
 
   beforeEach(async () => {
@@ -30,8 +55,30 @@ describe('RAG Search Tests', () => {
               return {
                 matches: isPasswordQuery 
                   ? [
-                      { id: 'msg1', score: 0.9, metadata: mockMessages[0].metadata, values: mockEmbedding },
-                      { id: 'msg2', score: 0.85, metadata: mockMessages[1].metadata, values: mockEmbedding }
+                      { 
+                        id: 'msg1', 
+                        score: 0.9, 
+                        metadata: {
+                          ...mockMessages[0].metadata,
+                          originalScore: 0.9,
+                          timeScore: 1,
+                          threadScore: 1,
+                          channelScore: 1
+                        }, 
+                        values: mockEmbedding 
+                      },
+                      { 
+                        id: 'msg2', 
+                        score: 0.85, 
+                        metadata: {
+                          ...mockMessages[1].metadata,
+                          originalScore: 0.85,
+                          timeScore: 1,
+                          threadScore: 1,
+                          channelScore: 1
+                        }, 
+                        values: mockEmbedding 
+                      }
                     ]
                   : [],
                 namespace: ''
@@ -65,12 +112,12 @@ describe('RAG Search Tests', () => {
 
       // Verify we get relevant results
       expect(results.length).toBeGreaterThan(0);
-      expect(results[0].score).toBeGreaterThan(0); // Updated expectation since we now include time score
+      expect(results[0].score).toBeGreaterThan(0);
       expect(results.some(r => r.id === 'msg1' || r.id === 'msg2')).toBeTruthy();
       
-      // Verify score components
-      expect(results[0].originalScore).toBeGreaterThan(0.8);
-      expect(results[0].timeScore).toBeDefined();
+      // Verify score components in metadata
+      expect(results[0].metadata.originalScore).toBeGreaterThan(0.8);
+      expect(results[0].metadata.timeScore).toBeDefined();
     });
 
     it('should return empty results for unrelated queries', async () => {
@@ -96,7 +143,13 @@ describe('RAG Search Tests', () => {
           { 
             id: 'msg2', 
             score: 0.9, 
-            metadata: mockMessages[1].metadata,
+            metadata: {
+              ...mockMessages[1].metadata,
+              originalScore: 0.9,
+              timeScore: 1,
+              threadScore: 1,
+              channelScore: 1
+            },
             values: mockEmbedding
           }
         ],
@@ -108,7 +161,7 @@ describe('RAG Search Tests', () => {
       // Verify we get the response with its context
       expect(results.length).toBe(1);
       expect(results[0].id).toBe('msg2');
-      expect(results[0].metadata?.replyTo).toBe('msg1');  // Context link
+      expect(results[0].metadata.replyTo).toBe('msg1');  // Context link
     });
   });
 
@@ -123,13 +176,27 @@ describe('RAG Search Tests', () => {
           { 
             id: 'recent', 
             score: 0.9, 
-            metadata: { ...mockMessages[0].metadata, timestamp: recentTime },
+            metadata: { 
+              ...mockMessages[0].metadata, 
+              timestamp: recentTime,
+              originalScore: 0.9,
+              timeScore: 1,
+              threadScore: 1,
+              channelScore: 1
+            },
             values: mockEmbedding
           },
           { 
             id: 'older', 
             score: 0.9, 
-            metadata: { ...mockMessages[0].metadata, timestamp: olderTime },
+            metadata: { 
+              ...mockMessages[0].metadata, 
+              timestamp: olderTime,
+              originalScore: 0.9,
+              timeScore: 0.5,
+              threadScore: 1,
+              channelScore: 1
+            },
             values: mockEmbedding
           }
         ],
@@ -141,11 +208,11 @@ describe('RAG Search Tests', () => {
       // Recent message should be scored higher
       expect(results[0].id).toBe('recent');
       expect(results[0].score).toBeGreaterThan(results[1].score);
-      expect(results[0].timeScore).toBeGreaterThan(results[1].timeScore);
+      expect(results[0].metadata.timeScore).toBeGreaterThan(results[1].metadata.timeScore);
       
       // Original semantic scores should be preserved
-      expect(results[0].originalScore).toBe(0.9);
-      expect(results[1].originalScore).toBe(0.9);
+      expect(results[0].metadata.originalScore).toBe(0.9);
+      expect(results[1].metadata.originalScore).toBe(0.9);
     });
 
     it('should handle missing timestamps gracefully', async () => {
@@ -154,7 +221,14 @@ describe('RAG Search Tests', () => {
           { 
             id: 'msg1', 
             score: 0.9, 
-            metadata: { userId: 'user1' }, // No timestamp
+            metadata: { 
+              userId: 'user1',
+              channelId: 'channel1',
+              originalScore: 0.9,
+              timeScore: 1,
+              threadScore: 1,
+              channelScore: 1
+            },
             values: mockEmbedding
           }
         ],
@@ -163,8 +237,8 @@ describe('RAG Search Tests', () => {
 
       const results = await vectorStore.findSimilarMessages('test query');
       
-      expect(results[0].score).toBe(0.9); // Should use original score
-      expect(results[0].timeScore).toBe(1); // Default time score
+      expect(results[0].score).toBe(0.9);
+      expect(results[0].metadata.timeScore).toBe(1); // Default time score
     });
   });
 }); 

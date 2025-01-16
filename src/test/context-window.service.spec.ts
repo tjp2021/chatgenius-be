@@ -21,7 +21,16 @@ interface VectorResult {
     messageId: string;
     userId: string;
     timestamp: string;
-    replyTo?: string;
+    replyTo: string | null;
+  };
+  context: {
+    parentMessage: {
+      id: string;
+      metadata: {
+        content: string;
+        channelId: string;
+      };
+    };
   };
 }
 
@@ -93,7 +102,17 @@ describe('ContextWindowService', () => {
           totalChunks: 1,
           messageId: 'msg-1',
           userId: 'user-1',
-          timestamp: new Date('2024-01-15T00:00:00Z').toISOString()
+          timestamp: new Date('2024-01-15T00:00:00Z').toISOString(),
+          replyTo: null
+        },
+        context: {
+          parentMessage: {
+            id: 'parent-1',
+            metadata: {
+              content: 'Parent Message 1',
+              channelId: 'channel-1'
+            }
+          }
         }
       },
       {
@@ -111,7 +130,17 @@ describe('ContextWindowService', () => {
           totalChunks: 1,
           messageId: 'msg-2',
           userId: 'user-2',
-          timestamp: new Date('2024-01-15T00:01:00Z').toISOString()
+          timestamp: new Date('2024-01-15T00:01:00Z').toISOString(),
+          replyTo: null
+        },
+        context: {
+          parentMessage: {
+            id: 'parent-2',
+            metadata: {
+              content: 'Parent Message 2',
+              channelId: 'channel-2'
+            }
+          }
         }
       }
     ];
@@ -167,7 +196,17 @@ describe('ContextWindowService', () => {
             messageId: 'msg1',
             channelId: 'channel1',
             userId: 'user1',
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            replyTo: null
+          },
+          context: {
+            parentMessage: {
+              id: 'parent1',
+              metadata: {
+                content: 'Parent Message 1',
+                channelId: 'channel1'
+              }
+            }
           }
         },
         {
@@ -187,6 +226,15 @@ describe('ContextWindowService', () => {
             userId: 'user2',
             timestamp: new Date().toISOString(),
             replyTo: 'msg1'
+          },
+          context: {
+            parentMessage: {
+              id: 'msg1',
+              metadata: {
+                content: 'API endpoint is down',
+                channelId: 'channel1'
+              }
+            }
           }
         },
         {
@@ -204,7 +252,17 @@ describe('ContextWindowService', () => {
             messageId: 'msg3',
             channelId: 'channel1',
             userId: 'user3',
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            replyTo: null
+          },
+          context: {
+            parentMessage: {
+              id: 'parent3',
+              metadata: {
+                content: 'Parent Message 3',
+                channelId: 'channel1'
+              }
+            }
           }
         }
       ];

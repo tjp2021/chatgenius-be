@@ -179,3 +179,231 @@ This might return:
    - Tests helped catch the thread context issue
    - Test cases verify both basic functionality and edge cases
    - Importance of testing real-world scenarios (thread conversations)
+
+## Scoring System Evolution and Lessons Learned
+
+### Initial Challenges and Solutions
+1. **Score Component Interactions**
+   - Challenge: Different scoring factors (semantic, time, channel, thread) operated on different scales
+   - Solution: Normalized scoring components and introduced clear boost factors
+   ```typescript
+   const finalScore = baseScore * timeBoost * channelBoost * threadBoost;
+   ```
+
+2. **Time Decay Complexity**
+   - Challenge: Linear time decay didn't capture conversation dynamics
+   - Evolution:
+     ```typescript
+     // Initial implementation (too weak)
+     TIME_DECAY_FACTOR = 0.05
+     
+     // Adjusted implementation (better for minutes-scale differences)
+     TIME_DECAY_FACTOR = 0.2
+     ```
+   - Learning: Time decay needs calibration based on expected conversation timeframes
+
+3. **Thread Context Preservation**
+   - Challenge: High base scores overshadowing thread relationships
+   - Solution: Implemented thread-aware scoring with tiebreaker
+   ```typescript
+   if (Math.abs(scoreDiff) < 0.01) {
+     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+   }
+   ```
+
+### Key Insights
+
+1. **Simplicity vs Complexity**
+   - Complex scoring algorithms (e.g., exponential time decay) often underperform simpler solutions
+   - KISS principle validated: Simple tiebreaker more effective than complex score adjustments
+   ```typescript
+   // Complex approach (avoided)
+   score = baseScore * Math.pow(timeScore, 3) * channelBoost * threadBoost;
+   
+   // Simpler solution (adopted)
+   score = baseScore * timeScore * channelBoost * threadBoost;
+   if (scoresClose) useTimestampTiebreaker();
+   ```
+
+2. **Real-world Testing Importance**
+   - Test data must reflect actual conversation patterns:
+     - Quick replies (minutes apart)
+     - Thread relationships
+     - Channel context
+   - Example test scenario:
+   ```typescript
+   const messages = [
+     { id: 'msg1', score: 0.85, timestamp: tenMinutesAgo },
+     { id: 'msg2', score: 0.75, timestamp: fiveMinutesAgo, replyTo: 'msg1' },
+     { id: 'msg3', score: 0.95, timestamp: now }
+   ];
+   ```
+
+3. **Scoring Factor Balance**
+   - Base semantic score: Foundation of relevance
+   - Time decay: Prioritize recent messages
+   - Channel boost: Maintain conversation context
+   - Thread boost: Preserve conversation flow
+   ```typescript
+   const CHANNEL_BOOST = 1.2;  // 20% boost for same channel
+   const THREAD_BOOST = 1.5;   // 50% boost for thread messages
+   ```
+
+### Implementation Guidelines
+
+1. **Score Normalization**
+   - Keep scoring factors in similar ranges
+   - Document boost factors and their rationale
+   - Consider interaction between factors
+
+2. **Tiebreaker Strategy**
+   - Use timestamps for deterministic ordering
+   - Set appropriate threshold for "equal" scores
+   - Consider real-world score variations
+
+3. **Testing Requirements**
+   - Test with realistic time intervals
+   - Verify thread context preservation
+   - Include edge cases (identical scores, missing timestamps)
+
+4. **Code Organization**
+   - Centralize scoring logic
+   - Document scoring factors and calculations
+   - Make boost factors configurable
+   ```typescript
+   @Injectable()
+   export class VectorStoreService {
+     private readonly TIME_DECAY_FACTOR = 0.2;
+     private readonly CHANNEL_BOOST = 1.2;
+     private readonly THREAD_BOOST = 1.5;
+     private readonly SCORE_EQUALITY_THRESHOLD = 0.01;
+   }
+   ```
+
+### Future Considerations
+
+1. **Dynamic Scoring**
+   - Adjust boost factors based on usage patterns
+   - Learn from user interactions
+   - Adapt to different conversation styles
+
+2. **Performance Optimization**
+   - Cache frequently accessed threads
+   - Batch score calculations
+   - Optimize sorting for large result sets
+
+3. **Monitoring and Tuning**
+   - Track scoring distribution
+   - Monitor boost factor effectiveness
+   - Gather user feedback on ranking quality
+
+## Practical Implementation Lessons: Avatar Context Window
+
+### Problem-Solution Analysis (PSAL Loop)
+
+1. **Problem**: Individual message context wasn't enough
+   - **Situation**: Initially only used top N similar messages
+   - **Action**: Implemented thread grouping
+   - **Learning**: Context requires understanding conversation flow, not just individual messages
+   ```typescript
+   // Before: Simple top-N selection
+   messages.slice(0, 3)
+   
+   // After: Thread-aware grouping
+   const threadGroups = new Map<string, { messages: any[], score: number }>();
+   similarMessages.forEach(msg => {
+     const threadId = msg.metadata?.replyTo || msg.id;
+     // Group by thread and track highest score
+   });
+   ```
+
+2. **Problem**: Lost chronological context within threads
+   - **Situation**: Messages were ordered by score only
+   - **Action**: Added chronological sorting within thread groups
+   - **Learning**: Time ordering is crucial for understanding conversation flow
+   ```typescript
+   thread.messages.sort((a, b) => 
+     new Date(a.metadata?.timestamp || 0).getTime() - 
+     new Date(b.metadata?.timestamp || 0).getTime()
+   )
+   ```
+
+3. **Problem**: Thread relevance vs Individual message relevance
+   - **Situation**: High-scoring individual messages could break thread context
+   - **Action**: Implemented thread-level scoring using max message score
+   - **Learning**: Thread relevance should be determined by its most relevant message
+   ```typescript
+   existing.score = Math.max(existing.score, msg.score || 0);
+   ```
+
+### Key Implementation Concepts
+
+1. **Thread-Aware Context**
+   - Group messages by thread ID
+   - Maintain parent-child relationships
+   - Visual representation with indentation (↪)
+   ```typescript
+   messages.join('\n  ↪ ') // Shows reply structure
+   ```
+
+2. **Balanced Scoring System**
+   - Thread-level scoring
+   - Message-level chronology
+   - Score-based thread prioritization
+   ```typescript
+   const topThreads = Array.from(threadGroups.values())
+     .sort((a, b) => b.score - a.score)
+     .slice(0, 2);
+   ```
+
+3. **Style-Context Integration**
+   - Combined user style analysis with conversation context
+   - Structured prompt format
+   - Clear style instructions with examples
+   ```typescript
+   content: `You are an AI avatar mimicking a user's communication style.
+   Here are the style characteristics...
+   Here are some examples of their past relevant message threads...`
+   ```
+
+### Testing Insights
+
+1. **Test Structure Evolution**
+   - Started with basic message inclusion tests
+   - Added thread structure verification
+   - Included chronological ordering checks
+   ```typescript
+   // Thread structure test
+   expect(systemPrompt).toContain('First message\n  ↪ Reply');
+   expect(thread1Index).toBeLessThan(thread2Index);
+   ```
+
+2. **Mock Data Patterns**
+   - Realistic thread structures
+   - Timestamp-based ordering
+   - Score-based relevance
+   ```typescript
+   const thread1Messages = [
+     { id: 'msg1', content: '...', score: 0.9,
+       metadata: { timestamp: new Date('2024-01-16T10:00:00Z') } },
+     { id: 'msg2', content: '...', score: 0.8,
+       metadata: { replyTo: 'msg1', timestamp: new Date('2024-01-16T10:01:00Z') } }
+   ];
+   ```
+
+### Future Considerations
+
+1. **Dynamic Thread Depth**
+   - Currently limited to top 2 threads
+   - Could adapt based on token budget
+   - Consider conversation complexity
+
+2. **Context Window Optimization**
+   - Token budget management
+   - Adaptive thread selection
+   - Dynamic relevance thresholds
+
+3. **Style-Context Balance**
+   - Weigh between style adherence and context preservation
+   - Adaptive prompt structure
+   - Context-aware style application

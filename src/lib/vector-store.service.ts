@@ -51,13 +51,13 @@ interface PineconeChunkMetadata extends ChunkMetadata {
 @Injectable()
 export class VectorStoreService {
   // Decay factor for time-based scoring (can be adjusted)
-  private readonly TIME_DECAY_FACTOR = 0.1;
+  private readonly TIME_DECAY_FACTOR = 0.5;
   // Channel relevance boost factor
-  private readonly CHANNEL_BOOST_FACTOR = 1.5;
+  private readonly CHANNEL_BOOST_FACTOR = 1.2;
   // Add thread boost factor
-  private readonly THREAD_BOOST_FACTOR = 1.3;
+  private readonly THREAD_BOOST_FACTOR = 1.5;
   // Default minimum score threshold
-  private readonly DEFAULT_MIN_SCORE = 0.7;
+  private readonly DEFAULT_MIN_SCORE = 0.6;
 
   constructor(
     private pinecone: PineconeService,
@@ -280,7 +280,6 @@ export class VectorStoreService {
         );
         const messageId = metadata.messageId.toString();
         const threadScore = this.calculateThreadScore(messageId, Array.from(threadMessages));
-        const combinedScore = maxScore * timeScore * channelScore * threadScore;
 
         // Sort chunks by index before reconstruction
         const sortedChunks = chunks.sort(
@@ -299,23 +298,66 @@ export class VectorStoreService {
         return {
           id: metadata.messageId.toString(),
           content: reconstructedContent,
-          score: combinedScore,
+          score: maxScore,  // Store raw score for now
           metadata: {
             ...metadata,
             originalScore: maxScore,
             timeScore,
             channelScore,
-            threadScore
+            threadScore,
+            replyTo: metadata.replyTo
           }
         };
       });
 
-    // 6. Sort by combined score and limit to original topK
-    const sortedMessages = messages
-      .sort((a, b) => b.score - a.score)
+    // 6. Group messages by thread
+    const threadGroups = new Map<string, typeof messages>();
+    messages.forEach(msg => {
+      const threadId = msg.metadata.replyTo || msg.id;  // Use replyTo as thread ID, or message ID if no reply
+      const group = threadGroups.get(threadId) || [];
+      group.push(msg);
+      threadGroups.set(threadId, group);
+    });
+
+    // 7. Calculate thread scores and sort
+    const sortedMessages = Array.from(threadGroups.values())
+      .map(group => {
+        // All messages in thread get thread boost
+        const hasThreadBoost = group.length > 1;
+        
+        // Calculate scores for each message in thread
+        return group.map(msg => {
+          // Within threads, boost the importance of time even more
+          const timeBoost = hasThreadBoost ? Math.pow(msg.metadata.timeScore, 3) : Math.pow(msg.metadata.timeScore, 2);
+          
+          const finalScore = msg.score * 
+            timeBoost * 
+            msg.metadata.channelScore * 
+            (hasThreadBoost ? this.THREAD_BOOST_FACTOR : 1);
+            
+          return {
+            ...msg,
+            score: finalScore,
+            metadata: {
+              ...msg.metadata,
+              threadScore: hasThreadBoost ? this.THREAD_BOOST_FACTOR : 1
+            }
+          };
+        });
+      })
+      .flat()
+      .sort((a, b) => {
+        // First compare by score
+        const scoreDiff = b.score - a.score;
+        // If scores are very close (within 0.01), use timestamp as tiebreaker
+        if (Math.abs(scoreDiff) < 0.01) {
+          return new Date(b.metadata.timestamp).getTime() - new Date(a.metadata.timestamp).getTime();
+        }
+        return scoreDiff;
+      })
       .slice(0, topK);
 
-    // 7. Include context for messages with replyTo
+    // 8. Include context for messages with replyTo
     return Promise.all(
       sortedMessages.map(async (msg) => {
         const replyToId = msg.metadata?.replyTo;

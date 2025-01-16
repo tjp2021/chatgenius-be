@@ -1,7 +1,15 @@
+export interface StyleAnalysis {
+  tone: string;
+  vocabulary: string;
+  messageLength: string;
+  commonPhrases: string[];
+  confidence: number;
+}
+
 export interface MessageAnalysis {
   timestamp: Date;
   lastMessageId: string;
-  analysis: string;
+  analysis: StyleAnalysis;
 }
 
 export interface AvatarAnalysisData {

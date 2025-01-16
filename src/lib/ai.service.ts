@@ -4,7 +4,7 @@ import { OpenAI } from 'openai';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import pdfParse from 'pdf-parse';
-import { AvatarAnalysis, AvatarUpdateOptions, AvatarAnalysisData } from '../interfaces/avatar.interface';
+import { AvatarAnalysis, AvatarAnalysisData } from '../interfaces/avatar.interface';
 import { VectorStoreService } from './vector-store.service';
 
 interface SearchMessagesOptions {
@@ -96,19 +96,50 @@ export class AiService implements OnModuleInit {
       }
 
       const analysisData = JSON.parse(avatar.analysis as string) as AvatarAnalysisData;
+      const style = analysisData.messageAnalysis.analysis;
 
-      // 1. Find relevant context
+      // Find relevant context
       const similarMessages = await this.vectorStore.findSimilarMessages(prompt);
+      
+      // Group messages by thread and include parent messages
+      const threadGroups = new Map<string, { messages: any[], score: number }>();
+      similarMessages.forEach(msg => {
+        const threadId = msg.metadata?.replyTo || msg.id;
+        const existing = threadGroups.get(threadId) || { messages: [], score: 0 };
+        existing.messages.push(msg);
+        existing.score = Math.max(existing.score, msg.score || 0);
+        threadGroups.set(threadId, existing);
+      });
+
+      // Sort threads by highest message score and take top 2 threads
+      const topThreads = Array.from(threadGroups.values())
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 2);
+
+      // Format context messages, including thread structure
+      const contextMessages = topThreads
+        .map(thread => thread.messages
+          .sort((a, b) => new Date(a.metadata?.timestamp || 0).getTime() - new Date(b.metadata?.timestamp || 0).getTime())
+          .map(msg => msg.content)
+          .join('\n  ↪ ') // Show reply structure
+        )
+        .join('\n\n');
       
       const completion = await this.openai.chat.completions.create({
         model: 'gpt-4-1106-preview',
         messages: [
           {
             role: 'system',
-            content: `You are an AI avatar mimicking this user's style. Here's their analyzed style:
-${analysisData.messageAnalysis.analysis}
+            content: `You are an AI avatar mimicking a user's communication style. Here are the style characteristics to follow:
+- Tone: ${style.tone}
+- Vocabulary Level: ${style.vocabulary}
+- Message Length: ${style.messageLength}
+- Common Phrases: ${style.commonPhrases.join(', ')}
 
-Generate a response that perfectly matches their communication style.`
+Here are some examples of their past relevant message threads for context:
+${contextMessages}
+
+Generate a response that matches these exact style characteristics. The response should be ${style.messageLength} in length, use ${style.vocabulary} vocabulary, maintain a ${style.tone} tone, and naturally incorporate their common phrases when appropriate.`
           },
           {
             role: 'user',
@@ -131,7 +162,7 @@ Generate a response that perfectly matches their communication style.`
       const userMessages = await this.prisma.message.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' },
-        take: 10,
+        take: 20,
         select: {
           content: true,
           createdAt: true,
@@ -142,27 +173,36 @@ Generate a response that perfectly matches their communication style.`
         throw new BadRequestException('Insufficient message history to determine style');
       }
 
-      // Generate response using style context
       const completion = await this.openai.chat.completions.create({
         model: 'gpt-4-1106-preview',
         messages: [
           {
             role: 'system',
-            content: 'Analyze the communication style in these messages. Focus on: tone, vocabulary level, typical message length, and common phrases.'
+            content: `Analyze the communication style in these messages and return a JSON object with exactly these fields:
+              - tone: (formal/casual/technical)
+              - vocabulary: (advanced/simple/technical)
+              - messageLength: (short/medium/long)
+              - commonPhrases: [array of up to 3 common phrases]`
           },
           {
             role: 'user',
             content: userMessages.map(msg => msg.content).join('\n')
           }
         ],
+        response_format: { type: "json_object" },
         temperature: 0.7,
         max_tokens: 300,
       });
 
+      const analysis = JSON.parse(completion.choices[0].message?.content || '{}');
+      
       return {
         userId,
         messageCount: userMessages.length,
-        styleAnalysis: completion.choices[0].message?.content
+        styleAnalysis: {
+          ...analysis,
+          confidence: Math.min(userMessages.length / 20, 1)
+        }
       };
     } catch (error) {
       this.logger.error('Error analyzing user style:', error);

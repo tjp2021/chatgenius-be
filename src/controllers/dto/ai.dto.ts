@@ -67,7 +67,13 @@ export class AvatarAnalysisDto {
   messageAnalysis: {
     timestamp: Date;
     lastMessageId: string;
-    analysis: string;
+    analysis: {
+      tone: string;
+      vocabulary: string;
+      messageLength: string;
+      commonPhrases: string[];
+      confidence: number;
+    };
   };
   updatedAt: Date;
 }

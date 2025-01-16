@@ -16,6 +16,20 @@ export class AvatarService implements IAvatarService {
     private readonly vectorStore: VectorStoreService
   ) {}
 
+  private validateStyleAnalysis(response: string) {
+    try {
+      const analysis = JSON.parse(response);
+      if (!analysis.tone || !analysis.vocabulary || 
+          !['formal', 'casual'].includes(analysis.tone) ||
+          !['technical', 'simple'].includes(analysis.vocabulary)) {
+        throw new BadRequestException('Invalid style analysis format');
+      }
+      return analysis;
+    } catch (e) {
+      throw new BadRequestException('Invalid style analysis response');
+    }
+  }
+
   async createAvatar(userId: string): Promise<AvatarAnalysis> {
     try {
       // Get user's messages
@@ -38,8 +52,19 @@ export class AvatarService implements IAvatarService {
       const messageTexts = messages.map(msg => msg.content).join('\n');
       const styleAnalysis = await this.synthesis.synthesizeResponse({
         channelId: 'style-analysis',
-        prompt: `Analyze this user's communication style. Focus on: tone, vocabulary level, typical message length, and common phrases. Here are their messages:\n\n${messageTexts}`
+        prompt: `Analyze this user's communication style and return a JSON object with exactly these fields:
+{
+  "tone": "formal" or "casual",
+  "vocabulary": "technical" or "simple"
+}
+
+Here are their messages:
+
+${messageTexts}`
       });
+
+      // Validate the response
+      const analysis = this.validateStyleAnalysis(styleAnalysis.response);
       
       // Create avatar record
       const avatar = await this.prisma.userAvatar.create({
@@ -49,7 +74,7 @@ export class AvatarService implements IAvatarService {
             messageAnalysis: {
               timestamp: new Date(),
               lastMessageId: messages[0].id,
-              analysis: styleAnalysis.response
+              analysis
             }
           })
         }
@@ -94,7 +119,7 @@ export class AvatarService implements IAvatarService {
       const response = await this.synthesis.synthesizeResponse({
         channelId: 'avatar-response',
         prompt: `You are an AI avatar mimicking this user's style. Here's their analyzed style:
-${analysisData.messageAnalysis.analysis}
+${JSON.stringify(analysisData.messageAnalysis.analysis)}
 
 Here's some context from their previous messages:
 ${contextMessages}
@@ -141,8 +166,19 @@ ${prompt}`
       const messageTexts = messages.map(msg => msg.content).join('\n');
       const styleAnalysis = await this.synthesis.synthesizeResponse({
         channelId: 'style-analysis',
-        prompt: `Analyze this user's communication style. Focus on: tone, vocabulary level, typical message length, and common phrases. Here are their messages:\n\n${messageTexts}`
+        prompt: `Analyze this user's communication style and return a JSON object with exactly these fields:
+{
+  "tone": "formal" or "casual",
+  "vocabulary": "technical" or "simple"
+}
+
+Here are their messages:
+
+${messageTexts}`
       });
+
+      // Validate the response
+      const analysis = this.validateStyleAnalysis(styleAnalysis.response);
 
       // Update avatar
       const updatedAvatar = await this.prisma.userAvatar.update({
@@ -152,7 +188,7 @@ ${prompt}`
             messageAnalysis: {
               timestamp: new Date(),
               lastMessageId: messages[0].id,
-              analysis: styleAnalysis.response
+              analysis
             }
           })
         }

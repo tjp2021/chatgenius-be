@@ -55,7 +55,7 @@ async function main() {
         .get<OpenAIService>(OpenAIService)
         .generateEmbedding(data.content);
       
-      await pineconeService.upsert(data.id, embedding, {
+      await pineconeService.upsertVector(data.id, embedding, {
         content: data.content,
         userId: data.userId,
         timestamp: data.timestamp,
