@@ -407,3 +407,145 @@ This might return:
    - Weigh between style adherence and context preservation
    - Adaptive prompt structure
    - Context-aware style application
+
+## Vector Storage System Architecture and Learnings
+
+### Component Overview and Insights
+
+1. **Message Chunking Strategy**
+   - Challenge: Long messages exceed embedding model limits
+   - Solution: Implemented smart chunking with metadata preservation
+   ```typescript
+   const chunks = textChunking.chunkText(content, {
+     messageId: msg.id,
+     ...msg.metadata
+   });
+   ```
+   - Learning: Chunk size affects both embedding quality and retrieval granularity
+
+2. **Embedding Generation Pipeline**
+   - Challenge: Efficient handling of multiple chunks
+   - Solution: Parallel embedding generation with Promise.all
+   ```typescript
+   const embeddings = await Promise.all(
+     chunks.map(chunk => embedding.createEmbedding(chunk.content))
+   );
+   ```
+   - Learning: Batch processing is crucial for performance at scale
+
+3. **Vector Storage Structure**
+   - Challenge: Maintaining relationships between chunks and original messages
+   - Solution: Rich metadata structure with unique identifiers
+   ```typescript
+   const vector = {
+     id: `${messageId}_chunk_${chunkIndex}`,
+     values: embedding,
+     metadata: {
+       content,           // Original text
+       channelId,         // Channel context
+       userId,            // Author context
+       timestamp,         // Time context
+       replyTo,          // Thread context
+       chunkIndex,        // Chunk tracking
+       totalChunks       // Completeness tracking
+     }
+   };
+   ```
+   - Learning: Rich metadata enables sophisticated retrieval strategies
+
+4. **Multi-Factor Scoring System**
+   - Challenge: Balancing different relevance factors
+   - Solution: Composite scoring with multiple boosts
+   ```typescript
+   const finalScore = originalScore *    // Semantic relevance
+                     timeScore *         // Recency
+                     channelScore *      // Channel context
+                     threadScore;        // Thread relevance
+   ```
+   - Learning: Different factors need different weights based on use case
+
+### Key Implementation Lessons
+
+1. **Chunking Best Practices**
+   - Keep chunk overlap for context continuity
+   - Store chunk relationship metadata
+   - Balance chunk size with embedding quality
+   ```typescript
+   interface ChunkMetadata {
+     chunkIndex: number;     // Position in sequence
+     totalChunks: number;    // Total chunks for message
+     messageId: string;      // Link to original
+   }
+   ```
+
+2. **Performance Optimization**
+   - Batch vector operations when possible
+   - Use efficient metadata indexing
+   - Implement smart caching strategies
+   ```typescript
+   // Process chunks in batches for efficiency
+   const batchSize = 100;
+   for (let i = 0; i < chunks.length; i += batchSize) {
+     const batch = chunks.slice(i, i + batchSize);
+     await storeChunkBatch(batch);
+   }
+   ```
+
+3. **Error Handling and Validation**
+   - Validate all required metadata fields
+   - Handle partial failures gracefully
+   - Maintain data consistency
+   ```typescript
+   if (!msg.metadata.channelId) {
+     throw new Error('All messages must have channelId');
+   }
+   ```
+
+### Testing Requirements
+
+1. **Vector Storage Tests**
+   - Test chunk generation and reconstruction
+   - Verify metadata preservation
+   - Check batch processing behavior
+   ```typescript
+   it('should chunk message and store with metadata', async () => {
+     const messageId = 'test123';
+     const content = 'Test message content';
+     const metadata = {
+       channelId: 'channel123',
+       userId: 'user123',
+       timestamp: new Date().toISOString()
+     };
+   });
+   ```
+
+2. **Retrieval Tests**
+   - Test semantic similarity accuracy
+   - Verify scoring factor interactions
+   - Check thread context preservation
+   ```typescript
+   it('should retrieve messages with correct scoring', async () => {
+     const results = await findSimilarMessages('query', {
+       channelId: 'channel123',
+       topK: 5
+     });
+     expect(results[0].score).toBeGreaterThan(results[1].score);
+   });
+   ```
+
+### Future Considerations
+
+1. **Scalability Improvements**
+   - Implement vector database sharding
+   - Optimize batch sizes dynamically
+   - Add caching layer for frequent queries
+
+2. **Enhanced Retrieval Features**
+   - Semantic clustering for related messages
+   - Dynamic score weighting based on usage
+   - Advanced thread context analysis
+
+3. **Monitoring and Maintenance**
+   - Track embedding quality metrics
+   - Monitor chunk size distribution
+   - Analyze retrieval performance patterns

@@ -14,6 +14,8 @@ import { MessagesModule } from './modules/messages/messages.module';
 import { FilesModule } from './modules/files/files.module';
 import { ChannelsModule } from './modules/channels/channels.module';
 import { VectorStoreModule } from './lib/vector-store.module';
+import { AvatarModule } from './modules/avatar/avatar.module';
+import { ResponseSynthesisModule } from './lib/response-synthesis.module';
 
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // WEBSOCKET MODULE CONFIGURATION - DO NOT MODIFY
@@ -35,6 +37,8 @@ import { VectorStoreModule } from './lib/vector-store.module';
     FilesModule,
     ChannelsModule,
     VectorStoreModule,
+    AvatarModule,
+    ResponseSynthesisModule,
   ],
   controllers: [AppController, SearchController, DataController, AiController],
   providers: [
