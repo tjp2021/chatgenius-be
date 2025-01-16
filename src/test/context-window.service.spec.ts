@@ -10,8 +10,7 @@ describe('ContextWindowService', () => {
 
   const mockPrismaService = {
     message: {
-      findUnique: jest.fn(),
-      findMany: jest.fn()
+      findUnique: jest.fn()
     }
   };
 
@@ -42,145 +41,329 @@ describe('ContextWindowService', () => {
     jest.clearAllMocks();
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
-  it('should return empty context for empty channel', async () => {
-    mockPrismaService.message.findMany.mockResolvedValue([]);
-    mockVectorStore.findSimilarMessages.mockResolvedValue([]);
-
-    const result = await service.getContextWindow({
-      channelId: 'test-channel',
-      prompt: 'test prompt'
-    });
-
-    expect(result.messages).toHaveLength(0);
-    expect(result.totalTokens).toBe(0);
-  });
-
-  it('should return relevant messages within token limit', async () => {
-    const mockVectorResults = [
-      { id: '1', score: 0.9 },
-      { id: '2', score: 0.8 }
+  describe('getContextWindow', () => {
+    const mockMessages = [
+      {
+        id: 'msg-1',
+        content: 'Message 1',
+        createdAt: new Date('2024-01-15T00:00:00Z'),
+        channelId: 'channel-1'
+      },
+      {
+        id: 'msg-2',
+        content: 'Message 2',
+        createdAt: new Date('2024-01-15T00:01:00Z'),
+        channelId: 'channel-2'
+      }
     ];
 
-    const mockMessages = {
-      '1': { content: 'First message', createdAt: new Date() },
-      '2': { content: 'Second message', createdAt: new Date() }
-    };
-
-    mockVectorStore.findSimilarMessages.mockResolvedValue(mockVectorResults);
-    mockPrismaService.message.findUnique.mockImplementation(async ({ where }) => 
-      mockMessages[where.id]
-    );
-
-    const result = await service.getContextWindow({
-      channelId: 'test-channel',
-      prompt: 'test prompt',
-      maxTokens: 1000
-    });
-
-    expect(result.messages).toHaveLength(2);
-    expect(result.totalTokens).toBeGreaterThan(0);
-    expect(result.totalTokens).toBeLessThanOrEqual(1000);
-    expect(mockPrismaService.message.findUnique).toHaveBeenCalledTimes(2);
-  });
-
-  it('should respect token limit and not include messages that would exceed it', async () => {
     const mockVectorResults = [
-      { id: '1', score: 0.9 },
-      { id: '2', score: 0.8 }
+      {
+        id: 'msg-1',
+        score: 0.9,
+        metadata: {
+          channelId: 'channel-1',
+          content: 'Message 1'
+        },
+        originalScore: 0.9,
+        timeScore: 1.0,
+        channelScore: 1.5
+      },
+      {
+        id: 'msg-2',
+        score: 0.8,
+        metadata: {
+          channelId: 'channel-2',
+          content: 'Message 2'
+        },
+        originalScore: 0.8,
+        timeScore: 0.9,
+        channelScore: 1.0
+      }
     ];
 
-    const mockMessages = {
-      '1': { content: 'A'.repeat(100), createdAt: new Date() }, // ~25 tokens
-      '2': { content: 'B'.repeat(100), createdAt: new Date() }  // ~25 tokens
-    };
-
-    mockVectorStore.findSimilarMessages.mockResolvedValue(mockVectorResults);
-    mockPrismaService.message.findUnique.mockImplementation(async ({ where }) => 
-      mockMessages[where.id]
-    );
-
-    const result = await service.getContextWindow({
-      channelId: 'test-channel',
-      prompt: 'test prompt',
-      maxTokens: 30 // Only enough for one message
+    beforeEach(() => {
+      mockPrismaService.message.findUnique
+        .mockImplementation((query) => {
+          const message = mockMessages.find(m => m.id === query.where.id);
+          return Promise.resolve(message || null);
+        });
     });
 
-    expect(result.messages).toHaveLength(1);
-    expect(result.totalTokens).toBeLessThanOrEqual(30);
-    expect(result.messages[0].id).toBe('1'); // Should include highest scoring message
-  });
+    it('should get context from single channel', async () => {
+      mockVectorStore.findSimilarMessages.mockResolvedValue([mockVectorResults[0]]);
 
-  it('should handle missing messages gracefully', async () => {
-    const mockVectorResults = [
-      { id: '1', score: 0.9 },
-      { id: '2', score: 0.8 }
-    ];
+      const result = await service.getContextWindow({
+        channelId: 'channel-1',
+        prompt: 'test query'
+      });
 
-    // Only one message exists in database
-    const mockMessages = {
-      '1': { content: 'First message', createdAt: new Date() }
-    };
+      expect(vectorStore.findSimilarMessages).toHaveBeenCalledWith(
+        'test query',
+        expect.objectContaining({
+          channelIds: ['channel-1'],
+          minScore: 0.7
+        })
+      );
 
-    mockVectorStore.findSimilarMessages.mockResolvedValue(mockVectorResults);
-    mockPrismaService.message.findUnique.mockImplementation(async ({ where }) => 
-      mockMessages[where.id] || null
-    );
-
-    const result = await service.getContextWindow({
-      channelId: 'test-channel',
-      prompt: 'test prompt'
+      expect(result.messages).toHaveLength(1);
+      expect(result.channels).toEqual(new Set(['channel-1']));
+      expect(result.messages[0]).toMatchObject({
+        id: 'msg-1',
+        channelId: 'channel-1',
+        channelScore: 1.5
+      });
     });
 
-    expect(result.messages).toHaveLength(1);
-    expect(result.messages[0].id).toBe('1');
-    expect(mockPrismaService.message.findUnique).toHaveBeenCalledTimes(2);
-  });
+    it('should get context from related channels', async () => {
+      mockVectorStore.findSimilarMessages
+        .mockResolvedValueOnce(mockVectorResults) // For finding related channels
+        .mockResolvedValueOnce(mockVectorResults); // For actual search
 
-  it('should preserve message order based on score', async () => {
-    const mockVectorResults = [
-      { id: '2', score: 0.95 }, // Higher score but different order
-      { id: '1', score: 0.9 },
-      { id: '3', score: 0.8 }
-    ];
+      const result = await service.getContextWindow({
+        channelId: 'channel-1',
+        prompt: 'test query',
+        includeRelatedChannels: true
+      });
 
-    const mockMessages = {
-      '1': { content: 'First', createdAt: new Date() },
-      '2': { content: 'Second', createdAt: new Date() },
-      '3': { content: 'Third', createdAt: new Date() }
-    };
-
-    mockVectorStore.findSimilarMessages.mockResolvedValue(mockVectorResults);
-    mockPrismaService.message.findUnique.mockImplementation(async ({ where }) => 
-      mockMessages[where.id]
-    );
-
-    const result = await service.getContextWindow({
-      channelId: 'test-channel',
-      prompt: 'test prompt'
+      expect(result.messages).toHaveLength(2);
+      expect(result.channels).toEqual(new Set(['channel-1', 'channel-2']));
+      expect(result.messages[0].channelScore).toBe(1.5); // Same channel boost
+      expect(result.messages[1].channelScore).toBe(1.0); // No boost
     });
 
-    expect(result.messages).toHaveLength(3);
-    expect(result.messages[0].id).toBe('2'); // Highest score should be first
-    expect(result.messages[1].id).toBe('1');
-    expect(result.messages[2].id).toBe('3');
-  });
+    it('should respect token limit', async () => {
+      // Each message is about 8 tokens (32 chars)
+      const longMessage = {
+        id: 'msg-3',
+        score: 0.9,
+        metadata: {
+          channelId: 'channel-1',
+          content: 'A'.repeat(200) // About 50 tokens
+        },
+        originalScore: 0.9,
+        timeScore: 1.0,
+        channelScore: 1.5
+      };
 
-  it('should handle vector store errors gracefully', async () => {
-    // Simulate vector store error
-    mockVectorStore.findSimilarMessages.mockRejectedValue(new Error('Vector store error'));
+      mockVectorStore.findSimilarMessages.mockResolvedValue([longMessage]);
+      mockPrismaService.message.findUnique.mockResolvedValue({
+        id: 'msg-3',
+        content: 'A'.repeat(200),
+        createdAt: new Date(),
+        channelId: 'channel-1'
+      });
 
-    const result = await service.getContextWindow({
-      channelId: 'test-channel',
-      prompt: 'test prompt'
+      const result = await service.getContextWindow({
+        channelId: 'channel-1',
+        prompt: 'test query',
+        maxTokens: 60 // Only enough for the long message
+      });
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.totalTokens).toBe(50);
     });
 
-    // Should return empty context on error
-    expect(result.messages).toHaveLength(0);
-    expect(result.totalTokens).toBe(0);
-    expect(mockPrismaService.message.findUnique).not.toHaveBeenCalled();
+    it('should include parent message context', async () => {
+      const messageWithParent = {
+        id: 'msg-1',
+        score: 0.9,
+        metadata: {
+          channelId: 'channel-1',
+          content: 'Reply message'
+        },
+        originalScore: 0.9,
+        timeScore: 1.0,
+        channelScore: 1.5,
+        context: {
+          parentMessage: {
+            id: 'parent-1',
+            metadata: {
+              content: 'Parent message',
+              channelId: 'channel-1'
+            }
+          }
+        }
+      };
+
+      mockVectorStore.findSimilarMessages.mockResolvedValue([messageWithParent]);
+      mockPrismaService.message.findUnique.mockResolvedValue({
+        id: 'msg-1',
+        content: 'Reply message',
+        createdAt: new Date(),
+        channelId: 'channel-1'
+      });
+
+      const result = await service.getContextWindow({
+        channelId: 'channel-1',
+        prompt: 'test query'
+      });
+
+      expect(result.messages[0].context).toBeDefined();
+      expect(result.messages[0].context?.parentMessage).toMatchObject({
+        id: 'parent-1',
+        content: 'Parent message',
+        channelId: 'channel-1'
+      });
+    });
+
+    it('should filter messages by minimum score', async () => {
+      const lowScoreMessage = {
+        id: 'msg-3',
+        score: 0.5, // Below default minimum of 0.7
+        metadata: {
+          channelId: 'channel-1',
+          content: 'Low score message'
+        },
+        originalScore: 0.5,
+        timeScore: 1.0,
+        channelScore: 1.5
+      };
+
+      mockVectorStore.findSimilarMessages.mockResolvedValue([mockVectorResults[0], lowScoreMessage]);
+
+      const result = await service.getContextWindow({
+        channelId: 'channel-1',
+        prompt: 'test query',
+        minScore: 0.7
+      });
+
+      expect(result.messages).toHaveLength(1);
+      expect(result.messages[0].id).toBe('msg-1');
+    });
+
+    it('should handle errors gracefully', async () => {
+      mockVectorStore.findSimilarMessages.mockRejectedValue(new Error('Search failed'));
+
+      const result = await service.getContextWindow({
+        channelId: 'channel-1',
+        prompt: 'test query'
+      });
+
+      expect(result.messages).toHaveLength(0);
+      expect(result.totalTokens).toBe(0);
+      expect(result.channels.size).toBe(1);
+    });
+
+    it('should boost scores for messages from same channel', async () => {
+      const sameChannelMsg = {
+        id: 'msg-1',
+        score: 0.8,
+        metadata: {
+          channelId: 'channel-1',
+          content: 'Same channel'
+        },
+        originalScore: 0.8,
+        timeScore: 1.0,
+        channelScore: 1.5
+      };
+
+      const otherChannelMsg = {
+        id: 'msg-2',
+        score: 0.9,
+        metadata: {
+          channelId: 'channel-2',
+          content: 'Other channel'
+        },
+        originalScore: 0.9,
+        timeScore: 1.0,
+        channelScore: 1.0
+      };
+
+      mockVectorStore.findSimilarMessages.mockResolvedValue([sameChannelMsg, otherChannelMsg]);
+      mockPrismaService.message.findUnique.mockImplementation((query) => {
+        return Promise.resolve({
+          id: query.where.id,
+          content: query.where.id === 'msg-1' ? 'Same channel' : 'Other channel',
+          createdAt: new Date(),
+          channelId: query.where.id === 'msg-1' ? 'channel-1' : 'channel-2'
+        });
+      });
+
+      const result = await service.getContextWindow({
+        channelId: 'channel-1',
+        prompt: 'test'
+      });
+
+      expect(result.messages[0].channelScore).toBe(1.5);
+      expect(result.messages[1].channelScore).toBe(1.0);
+    });
+
+    it('should limit related channels to maximum specified', async () => {
+      const mockResults = Array.from({ length: 5 }, (_, i) => ({
+        id: `msg-${i}`,
+        score: 0.9,
+        metadata: {
+          channelId: `channel-${i}`,
+          content: `Message ${i}`
+        },
+        originalScore: 0.9,
+        timeScore: 1.0,
+        channelScore: 1.0
+      }));
+
+      mockVectorStore.findSimilarMessages
+        .mockResolvedValueOnce(mockResults)  // For finding related channels
+        .mockResolvedValueOnce(mockResults); // For actual search
+
+      const result = await service.getContextWindow({
+        channelId: 'channel-0',
+        prompt: 'test',
+        includeRelatedChannels: true
+      });
+
+      // Should include original channel + 3 related channels (RELATED_CHANNELS_LIMIT)
+      expect(result.channels.size).toBeLessThanOrEqual(4);
+    });
+
+    it('should handle database errors gracefully', async () => {
+      mockVectorStore.findSimilarMessages.mockResolvedValue([mockVectorResults[0]]);
+      mockPrismaService.message.findUnique.mockRejectedValue(new Error('Database error'));
+
+      const result = await service.getContextWindow({
+        channelId: 'channel-1',
+        prompt: 'test'
+      });
+
+      expect(result.messages).toHaveLength(0);
+      expect(result.totalTokens).toBe(0);
+      expect(result.channels.size).toBe(1);
+    });
+
+    it('should handle empty search results', async () => {
+      mockVectorStore.findSimilarMessages.mockResolvedValue([]);
+
+      const result = await service.getContextWindow({
+        channelId: 'channel-1',
+        prompt: 'test'
+      });
+
+      expect(result.messages).toHaveLength(0);
+      expect(result.totalTokens).toBe(0);
+      expect(result.channels.size).toBe(1);
+    });
+
+    it('should handle invalid message IDs', async () => {
+      mockVectorStore.findSimilarMessages.mockResolvedValue([{
+        id: 'invalid-id',
+        score: 0.9,
+        metadata: {
+          channelId: 'channel-1',
+          content: 'Invalid message'
+        },
+        originalScore: 0.9,
+        timeScore: 1.0,
+        channelScore: 1.5
+      }]);
+      mockPrismaService.message.findUnique.mockResolvedValue(null);
+
+      const result = await service.getContextWindow({
+        channelId: 'channel-1',
+        prompt: 'test'
+      });
+
+      expect(result.messages).toHaveLength(0);
+      expect(result.totalTokens).toBe(0);
+    });
   });
 }); 

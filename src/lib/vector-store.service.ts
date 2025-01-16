@@ -1,17 +1,36 @@
 import { Injectable } from '@nestjs/common';
-import { PineconeService, Vector } from './pinecone.service';
+import { PineconeService, Vector, QueryOptions } from './pinecone.service';
 import { EmbeddingService } from './embedding.service';
 
 interface Message {
   id: string;
   content: string;
-  metadata: any;
+  metadata: MessageMetadata;
+}
+
+interface MessageMetadata {
+  channelId: string;
+  userId: string;
+  timestamp: string;
+  replyTo?: string;
+  [key: string]: any;
+}
+
+interface SearchOptions {
+  channelId?: string;
+  channelIds?: string[];
+  topK?: number;
+  minScore?: number;
 }
 
 @Injectable()
 export class VectorStoreService {
   // Decay factor for time-based scoring (can be adjusted)
   private readonly TIME_DECAY_FACTOR = 0.1;
+  // Channel relevance boost factor
+  private readonly CHANNEL_BOOST_FACTOR = 1.5;
+  // Default minimum score threshold
+  private readonly DEFAULT_MIN_SCORE = 0.7;
 
   constructor(
     private pinecone: PineconeService,
@@ -25,19 +44,35 @@ export class VectorStoreService {
     return Math.exp(-this.TIME_DECAY_FACTOR * hoursDiff); // Exponential decay
   }
 
-  async storeMessage(id: string, content: string, metadata: any) {
+  private calculateChannelScore(messageChannelId: string, searchChannelId?: string): number {
+    // If no specific channel is requested, don't modify score
+    if (!searchChannelId) return 1;
+    // Boost score for messages from the same channel
+    return messageChannelId === searchChannelId ? this.CHANNEL_BOOST_FACTOR : 1;
+  }
+
+  async storeMessage(id: string, content: string, metadata: MessageMetadata) {
+    if (!metadata.channelId) {
+      throw new Error('channelId is required in metadata');
+    }
+
     // 1. Create embedding
     const vector = await this.embedding.createEmbedding(content);
     
-    // 2. Store in Pinecone
+    // 2. Store in Pinecone with required metadata
     await this.pinecone.upsertVector(id, vector, {
       ...metadata,
-      timestamp: (metadata.timestamp || new Date().toISOString()).toString() // Ensure timestamp is string
+      timestamp: metadata.timestamp || new Date().toISOString()
     });
   }
 
   async storeMessages(messages: Message[]) {
     if (messages.length === 0) return;
+
+    // Validate all messages have channelId
+    if (messages.some(msg => !msg.metadata.channelId)) {
+      throw new Error('All messages must have channelId in metadata');
+    }
 
     // 1. Create embeddings in parallel
     const embeddings = await Promise.all(
@@ -50,7 +85,7 @@ export class VectorStoreService {
       values: embeddings[i],
       metadata: {
         ...msg.metadata,
-        timestamp: (msg.metadata.timestamp || new Date().toISOString()).toString()
+        timestamp: msg.metadata.timestamp || new Date().toISOString()
       }
     }));
 
@@ -58,33 +93,46 @@ export class VectorStoreService {
     await this.pinecone.upsertVectors(vectors);
   }
 
-  async findSimilarMessages(content: string, topK: number = 5) {
+  async findSimilarMessages(content: string, options: SearchOptions = {}) {
+    const { channelId, channelIds, topK = 5, minScore = this.DEFAULT_MIN_SCORE } = options;
+    
     // 1. Create embedding for search query
     const vector = await this.embedding.createEmbedding(content);
     
-    // 2. Search in Pinecone
-    const results = await this.pinecone.queryVectors(vector, topK);
+    // 2. Prepare filter for channel-aware search
+    const filter: QueryOptions['filter'] = channelId ? 
+      { channelId: { $eq: channelId } } : 
+      channelIds?.length ? 
+        { channelId: { $in: channelIds } } : 
+        undefined;
     
-    // 3. Transform results and include context
+    // 3. Search in Pinecone with channel filter
+    const results = await this.pinecone.queryVectors(vector, topK, { filter });
+    
+    // 4. Transform results and include context
     const messages = results.matches?.map(match => {
-      const timeScore = match.metadata?.timestamp ? 
-        this.calculateTimeScore(match.metadata.timestamp.toString()) : 1;
+      const timeScore = this.calculateTimeScore(match.metadata.timestamp.toString());
+      const channelScore = this.calculateChannelScore(
+        match.metadata.channelId.toString(),
+        channelId
+      );
+      const combinedScore = match.score * timeScore * channelScore;
       
       return {
         id: match.id,
-        score: match.score * timeScore, // Combine semantic and time scores
+        score: combinedScore,
         metadata: match.metadata,
-        originalScore: match.score, // Keep original score for reference
-        timeScore
+        originalScore: match.score,
+        timeScore,
+        channelScore
       };
-    }) || [];
+    }).filter(msg => msg.score >= minScore) || [];
 
-    // 4. For messages with replyTo, include the context
+    // 5. For messages with replyTo, include the context
     const messagesWithContext = await Promise.all(
       messages.map(async (msg) => {
         const replyToId = msg.metadata?.replyTo;
         if (replyToId && typeof replyToId === 'string') {
-          // Find the parent message directly by ID
           const parentMessage = await this.pinecone.getVectorById(replyToId);
           
           if (parentMessage) {
@@ -103,7 +151,7 @@ export class VectorStoreService {
       })
     );
 
-    // 5. Sort by combined score
+    // 6. Sort by combined score
     return messagesWithContext.sort((a, b) => b.score - a.score);
   }
 } 

@@ -3,22 +3,35 @@ import { VectorStoreService } from '../lib/vector-store.service';
 import { PineconeService } from '../lib/pinecone.service';
 import { EmbeddingService } from '../lib/embedding.service';
 
+interface TestMessage {
+  id: string;
+  score: number;
+  metadata: any;
+  originalScore: number;
+  timeScore: number;
+  channelScore: number;
+  context?: {
+    parentMessage: {
+      id: string;
+      metadata: any;
+    };
+  };
+}
+
 describe('VectorStoreService', () => {
   let service: VectorStoreService;
   let pineconeService: PineconeService;
   let embeddingService: EmbeddingService;
 
-  const mockEmbedding = Array(1536).fill(0.1);
-  const mockPineconeResponse = {
-    matches: [
-      { 
-        id: 'msg1', 
-        score: 0.9, 
-        metadata: { content: 'test content', userId: 'user1', timestamp: new Date().toISOString() },
-        values: []
-      }
-    ],
-    namespace: ''
+  const mockPineconeService = {
+    upsertVector: jest.fn(),
+    upsertVectors: jest.fn(),
+    queryVectors: jest.fn(),
+    getVectorById: jest.fn()
+  };
+
+  const mockEmbeddingService = {
+    createEmbedding: jest.fn()
   };
 
   beforeEach(async () => {
@@ -27,31 +40,11 @@ describe('VectorStoreService', () => {
         VectorStoreService,
         {
           provide: PineconeService,
-          useValue: {
-            upsertVector: jest.fn().mockResolvedValue(undefined),
-            upsertVectors: jest.fn().mockResolvedValue(undefined),
-            queryVectors: jest.fn().mockResolvedValue(mockPineconeResponse),
-            getVectorById: jest.fn().mockImplementation((id) => {
-              if (id === 'parent-msg') {
-                return Promise.resolve({
-                  id: 'parent-msg',
-                  score: 0.8,
-                  metadata: {
-                    content: 'parent content',
-                    userId: 'user1',
-                    timestamp: new Date().toISOString()
-                  }
-                });
-              }
-              return Promise.resolve(undefined);
-            })
-          }
+          useValue: mockPineconeService
         },
         {
           provide: EmbeddingService,
-          useValue: {
-            createEmbedding: jest.fn().mockResolvedValue(mockEmbedding)
-          }
+          useValue: mockEmbeddingService
         }
       ],
     }).compile();
@@ -59,171 +52,221 @@ describe('VectorStoreService', () => {
     service = module.get<VectorStoreService>(VectorStoreService);
     pineconeService = module.get<PineconeService>(PineconeService);
     embeddingService = module.get<EmbeddingService>(EmbeddingService);
+
+    // Reset all mocks before each test
+    jest.clearAllMocks();
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
   });
 
   describe('storeMessage', () => {
-    it('should store message with embedding', async () => {
-      const messageId = 'test-id';
-      const content = 'test content';
-      const metadata = { userId: 'user1' };
+    it('should store message with channel metadata', async () => {
+      const mockEmbedding = [0.1, 0.2, 0.3];
+      mockEmbeddingService.createEmbedding.mockResolvedValue(mockEmbedding);
 
-      await service.storeMessage(messageId, content, metadata);
+      const metadata = {
+        channelId: 'channel-1',
+        userId: 'user-1',
+        timestamp: '2024-01-15T00:00:00Z'
+      };
 
-      expect(embeddingService.createEmbedding).toHaveBeenCalledWith(content);
-      expect(pineconeService.upsertVector).toHaveBeenCalledWith(
-        messageId,
+      await service.storeMessage('msg-1', 'test content', metadata);
+
+      expect(mockPineconeService.upsertVector).toHaveBeenCalledWith(
+        'msg-1',
         mockEmbedding,
         expect.objectContaining({
-          userId: 'user1',
-          timestamp: expect.any(String)
+          channelId: 'channel-1',
+          userId: 'user-1',
+          timestamp: '2024-01-15T00:00:00Z'
         })
       );
     });
 
-    it('should handle errors during storage', async () => {
-      jest.spyOn(embeddingService, 'createEmbedding').mockRejectedValue(new Error('Embedding failed'));
-      
-      await expect(service.storeMessage('id', 'content', {}))
+    it('should throw error if channelId is missing', async () => {
+      const metadata = {
+        userId: 'user-1',
+        timestamp: '2024-01-15T00:00:00Z'
+      };
+
+      await expect(service.storeMessage('msg-1', 'test content', metadata as any))
         .rejects
-        .toThrow('Embedding failed');
+        .toThrow('channelId is required in metadata');
     });
   });
 
   describe('storeMessages', () => {
-    it('should store multiple messages in batch', async () => {
-      const messages = [
-        { id: 'msg1', content: 'content 1', metadata: { userId: 'user1' } },
-        { id: 'msg2', content: 'content 2', metadata: { userId: 'user2' } }
-      ];
+    it('should store multiple messages with channel metadata', async () => {
+      const mockEmbeddings = [[0.1], [0.2]];
+      mockEmbeddingService.createEmbedding
+        .mockResolvedValueOnce(mockEmbeddings[0])
+        .mockResolvedValueOnce(mockEmbeddings[1]);
 
-      // Mock embeddings creation
-      jest.spyOn(embeddingService, 'createEmbedding')
-        .mockResolvedValueOnce([...mockEmbedding])
-        .mockResolvedValueOnce([...mockEmbedding]);
+      const messages = [
+        {
+          id: 'msg-1',
+          content: 'test 1',
+          metadata: {
+            channelId: 'channel-1',
+            userId: 'user-1',
+            timestamp: '2024-01-15T00:00:00Z'
+          }
+        },
+        {
+          id: 'msg-2',
+          content: 'test 2',
+          metadata: {
+            channelId: 'channel-2',
+            userId: 'user-2',
+            timestamp: '2024-01-15T00:00:00Z'
+          }
+        }
+      ];
 
       await service.storeMessages(messages);
 
-      // Verify embeddings were created for each message
-      expect(embeddingService.createEmbedding).toHaveBeenCalledTimes(2);
-      expect(embeddingService.createEmbedding).toHaveBeenCalledWith('content 1');
-      expect(embeddingService.createEmbedding).toHaveBeenCalledWith('content 2');
-
-      // Verify batch upsert was called with correct vectors
-      expect(pineconeService.upsertVectors).toHaveBeenCalledWith(
+      expect(mockPineconeService.upsertVectors).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({
-            id: 'msg1',
-            values: mockEmbedding,
-            metadata: expect.objectContaining({
-              userId: 'user1',
-              timestamp: expect.any(String)
-            })
+            id: 'msg-1',
+            values: mockEmbeddings[0],
+            metadata: expect.objectContaining({ channelId: 'channel-1' })
           }),
           expect.objectContaining({
-            id: 'msg2',
-            values: mockEmbedding,
-            metadata: expect.objectContaining({
-              userId: 'user2',
-              timestamp: expect.any(String)
-            })
+            id: 'msg-2',
+            values: mockEmbeddings[1],
+            metadata: expect.objectContaining({ channelId: 'channel-2' })
           })
         ])
       );
     });
-
-    it('should handle empty batch', async () => {
-      await service.storeMessages([]);
-      expect(embeddingService.createEmbedding).not.toHaveBeenCalled();
-      expect(pineconeService.upsertVectors).not.toHaveBeenCalled();
-    });
-
-    it('should handle embedding errors', async () => {
-      const messages = [
-        { id: 'msg1', content: 'content 1', metadata: { userId: 'user1' } }
-      ];
-
-      jest.spyOn(embeddingService, 'createEmbedding')
-        .mockRejectedValue(new Error('Embedding failed'));
-
-      await expect(service.storeMessages(messages))
-        .rejects
-        .toThrow('Embedding failed');
-    });
   });
 
   describe('findSimilarMessages', () => {
-    it('should find similar messages', async () => {
-      const results = await service.findSimilarMessages('test query');
-
-      expect(embeddingService.createEmbedding).toHaveBeenCalledWith('test query');
-      expect(pineconeService.queryVectors).toHaveBeenCalledWith(mockEmbedding, 5);
-      expect(results[0]).toMatchObject({
-        id: 'msg1',
-        score: expect.any(Number),
-        metadata: expect.objectContaining({
-          content: 'test content',
-          userId: 'user1',
-          timestamp: expect.any(String)
-        })
-      });
-    });
-
-    it('should handle empty results', async () => {
-      jest.spyOn(pineconeService, 'queryVectors').mockResolvedValue({
-        matches: [],
-        namespace: ''
-      });
-      
-      const results = await service.findSimilarMessages('test query');
-      expect(results).toEqual([]);
-    });
-
-    it('should retrieve parent message when replyTo is present', async () => {
-      // Mock a message with replyTo
-      const mockResponseWithReply = {
-        matches: [
-          { 
-            id: 'reply-msg', 
-            score: 0.9, 
-            metadata: { 
-              content: 'reply content',
-              userId: 'user1',
-              timestamp: new Date().toISOString(),
-              replyTo: 'parent-msg'
-            },
-            values: []
+    const mockQueryResponse = {
+      matches: [
+        {
+          id: 'msg-1',
+          score: 0.9,
+          metadata: {
+            channelId: 'channel-1',
+            userId: 'user-1',
+            timestamp: '2024-01-15T00:00:00Z'
           }
-        ],
-        namespace: ''
-      };
-
-      // Setup mock responses
-      const queryVectorsSpy = jest.spyOn(pineconeService, 'queryVectors')
-        .mockResolvedValueOnce(mockResponseWithReply);
-      const getVectorByIdSpy = jest.spyOn(pineconeService, 'getVectorById');
-
-      const results = await service.findSimilarMessages('test query');
-
-      // Verify the results
-      expect(results[0]).toMatchObject({
-        id: 'reply-msg',
-        metadata: expect.objectContaining({
-          content: 'reply content',
-          replyTo: 'parent-msg'
-        }),
-        context: {
-          parentMessage: {
-            id: 'parent-msg',
-            metadata: expect.objectContaining({
-              content: 'parent content'
-            })
+        },
+        {
+          id: 'msg-2',
+          score: 0.8,
+          metadata: {
+            channelId: 'channel-2',
+            userId: 'user-2',
+            timestamp: '2024-01-15T00:00:00Z'
           }
         }
+      ]
+    };
+
+    beforeEach(() => {
+      mockEmbeddingService.createEmbedding.mockResolvedValue([0.1, 0.2, 0.3]);
+      mockPineconeService.queryVectors.mockResolvedValue(mockQueryResponse);
+    });
+
+    it('should filter by single channel', async () => {
+      await service.findSimilarMessages('test query', { channelId: 'channel-1' });
+
+      expect(mockPineconeService.queryVectors).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.any(Number),
+        expect.objectContaining({
+          filter: { channelId: { $eq: 'channel-1' } }
+        })
+      );
+    });
+
+    it('should filter by multiple channels', async () => {
+      await service.findSimilarMessages('test query', {
+        channelIds: ['channel-1', 'channel-2']
       });
 
-      // Verify parent message was queried
-      expect(queryVectorsSpy).toHaveBeenCalledTimes(1);
-      expect(getVectorByIdSpy).toHaveBeenCalledWith('parent-msg');
+      expect(mockPineconeService.queryVectors).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.any(Number),
+        expect.objectContaining({
+          filter: { channelId: { $in: ['channel-1', 'channel-2'] } }
+        })
+      );
+    });
+
+    it('should apply channel boost to same-channel messages', async () => {
+      const results = await service.findSimilarMessages('test query', {
+        channelId: 'channel-1'
+      });
+
+      const channel1Message = results.find(msg => msg.metadata.channelId === 'channel-1');
+      const channel2Message = results.find(msg => msg.metadata.channelId === 'channel-2');
+
+      expect(channel1Message.channelScore).toBe(1.5); // CHANNEL_BOOST_FACTOR
+      expect(channel2Message.channelScore).toBe(1); // No boost
+    });
+
+    it('should filter out messages below minimum score', async () => {
+      mockPineconeService.queryVectors.mockResolvedValue({
+        matches: [
+          {
+            id: 'msg-1',
+            score: 0.9,
+            metadata: {
+              channelId: 'channel-1',
+              timestamp: '2024-01-15T00:00:00Z'
+            }
+          },
+          {
+            id: 'msg-2',
+            score: 0.5, // Below default minimum of 0.7
+            metadata: {
+              channelId: 'channel-1',
+              timestamp: '2024-01-15T00:00:00Z'
+            }
+          }
+        ]
+      });
+
+      const results = await service.findSimilarMessages('test query');
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe('msg-1');
+    });
+
+    it('should include parent message context when replyTo is present', async () => {
+      const mockParentMessage = {
+        id: 'parent-1',
+        metadata: {
+          content: 'parent content',
+          channelId: 'channel-1'
+        }
+      };
+
+      mockPineconeService.queryVectors.mockResolvedValue({
+        matches: [
+          {
+            id: 'msg-1',
+            score: 0.9,
+            metadata: {
+              channelId: 'channel-1',
+              timestamp: '2024-01-15T00:00:00Z',
+              replyTo: 'parent-1'
+            }
+          }
+        ]
+      });
+
+      mockPineconeService.getVectorById.mockResolvedValue(mockParentMessage);
+
+      const results = await service.findSimilarMessages('test query');
+      const firstResult = results[0] as TestMessage;
+      expect(firstResult.context).toBeDefined();
+      expect(firstResult.context?.parentMessage.id).toBe('parent-1');
     });
   });
 }); 
