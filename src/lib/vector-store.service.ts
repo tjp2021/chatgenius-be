@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { PineconeService } from './pinecone.service';
+import { PineconeService, Vector } from './pinecone.service';
 import { EmbeddingService } from './embedding.service';
+
+interface Message {
+  id: string;
+  content: string;
+  metadata: any;
+}
 
 @Injectable()
 export class VectorStoreService {
@@ -28,6 +34,28 @@ export class VectorStoreService {
       ...metadata,
       timestamp: (metadata.timestamp || new Date().toISOString()).toString() // Ensure timestamp is string
     });
+  }
+
+  async storeMessages(messages: Message[]) {
+    if (messages.length === 0) return;
+
+    // 1. Create embeddings in parallel
+    const embeddings = await Promise.all(
+      messages.map(msg => this.embedding.createEmbedding(msg.content))
+    );
+
+    // 2. Prepare vectors with metadata
+    const vectors: Vector[] = messages.map((msg, i) => ({
+      id: msg.id,
+      values: embeddings[i],
+      metadata: {
+        ...msg.metadata,
+        timestamp: (msg.metadata.timestamp || new Date().toISOString()).toString()
+      }
+    }));
+
+    // 3. Store batch in Pinecone
+    await this.pinecone.upsertVectors(vectors);
   }
 
   async findSimilarMessages(content: string, topK: number = 5) {

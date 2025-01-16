@@ -34,8 +34,9 @@ export class TextChunkingService {
     let currentChunk = '';
 
     for (const sentence of sentences) {
+      const trimmedSentence = sentence.trim();
       // If adding this sentence exceeds target size, start new chunk
-      if (currentChunk.length + sentence.length > this.TARGET_CHUNK_SIZE && 
+      if (currentChunk.length + trimmedSentence.length > this.TARGET_CHUNK_SIZE && 
           currentChunk.length >= this.MIN_CHUNK_SIZE) {
         chunks.push({
           content: currentChunk.trim(),
@@ -47,7 +48,7 @@ export class TextChunkingService {
         });
         currentChunk = '';
       }
-      currentChunk += sentence + ' ';
+      currentChunk += trimmedSentence + ' ';
     }
 
     // Add final chunk if not empty

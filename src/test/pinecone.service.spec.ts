@@ -56,6 +56,57 @@ describe('PineconeService', () => {
     });
   });
 
+  describe('upsertVectors', () => {
+    it('should upsert multiple vectors in batch', async () => {
+      const mockUpsert = jest.fn().mockResolvedValue({});
+      const mockIndex = { upsert: mockUpsert };
+      jest.spyOn(service['pinecone'], 'Index').mockReturnValue(mockIndex as any);
+
+      const vectors = [
+        {
+          id: 'test-id-1',
+          values: [0.1, 0.2, 0.3],
+          metadata: { content: 'test content 1' }
+        },
+        {
+          id: 'test-id-2',
+          values: [0.4, 0.5, 0.6],
+          metadata: { content: 'test content 2' }
+        }
+      ];
+
+      await service.upsertVectors(vectors);
+
+      expect(mockUpsert).toHaveBeenCalledWith(vectors);
+    });
+
+    it('should handle empty batch', async () => {
+      const mockUpsert = jest.fn().mockResolvedValue({});
+      const mockIndex = { upsert: mockUpsert };
+      jest.spyOn(service['pinecone'], 'Index').mockReturnValue(mockIndex as any);
+
+      await service.upsertVectors([]);
+
+      expect(mockUpsert).not.toHaveBeenCalled();
+    });
+
+    it('should handle upsert errors', async () => {
+      const mockUpsert = jest.fn().mockRejectedValue(new Error('Batch upsert failed'));
+      const mockIndex = { upsert: mockUpsert };
+      jest.spyOn(service['pinecone'], 'Index').mockReturnValue(mockIndex as any);
+
+      const vectors = [{
+        id: 'test-id',
+        values: [0.1, 0.2, 0.3],
+        metadata: { content: 'test content' }
+      }];
+
+      await expect(service.upsertVectors(vectors))
+        .rejects
+        .toThrow('Batch upsert failed');
+    });
+  });
+
   describe('queryVectors', () => {
     it('should query vectors with default topK', async () => {
       const mockQuery = jest.fn().mockResolvedValue({

@@ -6,6 +6,12 @@ export interface QueryOptions {
   filter?: Record<string, any>;
 }
 
+export interface Vector {
+  id: string;
+  values: number[];
+  metadata: any;
+}
+
 @Injectable()
 export class PineconeService implements OnModuleInit {
   private pinecone: Pinecone;
@@ -33,6 +39,13 @@ export class PineconeService implements OnModuleInit {
       values,
       metadata
     }]);
+  }
+
+  async upsertVectors(vectors: Vector[]) {
+    if (vectors.length === 0) return;
+    
+    const index = this.pinecone.Index(this.indexName);
+    await index.upsert(vectors);
   }
 
   async queryVectors(values: number[], topK: number = 5, options: QueryOptions = {}) {

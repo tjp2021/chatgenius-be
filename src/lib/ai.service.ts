@@ -3,6 +3,7 @@ import { PrismaService } from './prisma.service';
 import { OpenAI } from 'openai';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
+import pdfParse from 'pdf-parse';
 import { AvatarAnalysis, AvatarUpdateOptions, AvatarAnalysisData } from '../interfaces/avatar.interface';
 import { VectorStoreService } from './vector-store.service';
 
@@ -198,8 +199,40 @@ Generate a response that perfectly matches their communication style.`
     };
   }
 
-  async extractDocumentContent(fileId: string) {
-    return 'Mocked document content';
+  async extractDocumentContent(fileId: string): Promise<string> {
+    // 1. Get file metadata from database
+    const file = await this.prisma.file.findUnique({
+      where: { id: fileId }
+    });
+
+    if (!file) {
+      throw new BadRequestException('File not found');
+    }
+
+    // 2. Validate file type
+    const supportedTypes = ['text/plain', 'text/markdown', 'application/pdf'];
+    if (!supportedTypes.includes(file.type)) {
+      throw new BadRequestException(`Unsupported file type: ${file.type}`);
+    }
+
+    // 3. Read file content
+    try {
+      if (file.type === 'application/pdf') {
+        this.logger.debug(`Reading PDF file from: ${file.url}`);
+        const buffer = await fs.promises.readFile(file.url);
+        this.logger.debug(`PDF file size: ${buffer.length} bytes`);
+        const data = await pdfParse(buffer);
+        this.logger.debug(`PDF text extracted, length: ${data.text.length}`);
+        return data.text;
+      } else {
+        const content = await fs.promises.readFile(file.url, 'utf8');
+        return content;
+      }
+    } catch (error) {
+      this.logger.error(`Failed to read file content: ${error.message}`);
+      this.logger.error(`Error stack: ${error.stack}`);
+      throw new BadRequestException('Failed to read file content');
+    }
   }
 
   async updateUserAvatar(userId: string): Promise<AvatarAnalysis> {

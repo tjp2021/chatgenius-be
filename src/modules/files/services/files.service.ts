@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 @Injectable()
 export class FilesService implements FileRepository {
   private readonly logger = new Logger(FilesService.name);
-  private readonly allowedMimeTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  private readonly allowedMimeTypes = ['image/jpeg', 'image/png', 'application/pdf', 'text/plain'];
   private readonly maxFileSize = 5 * 1024 * 1024; // 5MB
 
   constructor(

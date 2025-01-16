@@ -29,6 +29,7 @@ describe('VectorStoreService', () => {
           provide: PineconeService,
           useValue: {
             upsertVector: jest.fn().mockResolvedValue(undefined),
+            upsertVectors: jest.fn().mockResolvedValue(undefined),
             queryVectors: jest.fn().mockResolvedValue(mockPineconeResponse),
             getVectorById: jest.fn().mockImplementation((id) => {
               if (id === 'parent-msg') {
@@ -83,6 +84,68 @@ describe('VectorStoreService', () => {
       jest.spyOn(embeddingService, 'createEmbedding').mockRejectedValue(new Error('Embedding failed'));
       
       await expect(service.storeMessage('id', 'content', {}))
+        .rejects
+        .toThrow('Embedding failed');
+    });
+  });
+
+  describe('storeMessages', () => {
+    it('should store multiple messages in batch', async () => {
+      const messages = [
+        { id: 'msg1', content: 'content 1', metadata: { userId: 'user1' } },
+        { id: 'msg2', content: 'content 2', metadata: { userId: 'user2' } }
+      ];
+
+      // Mock embeddings creation
+      jest.spyOn(embeddingService, 'createEmbedding')
+        .mockResolvedValueOnce([...mockEmbedding])
+        .mockResolvedValueOnce([...mockEmbedding]);
+
+      await service.storeMessages(messages);
+
+      // Verify embeddings were created for each message
+      expect(embeddingService.createEmbedding).toHaveBeenCalledTimes(2);
+      expect(embeddingService.createEmbedding).toHaveBeenCalledWith('content 1');
+      expect(embeddingService.createEmbedding).toHaveBeenCalledWith('content 2');
+
+      // Verify batch upsert was called with correct vectors
+      expect(pineconeService.upsertVectors).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'msg1',
+            values: mockEmbedding,
+            metadata: expect.objectContaining({
+              userId: 'user1',
+              timestamp: expect.any(String)
+            })
+          }),
+          expect.objectContaining({
+            id: 'msg2',
+            values: mockEmbedding,
+            metadata: expect.objectContaining({
+              userId: 'user2',
+              timestamp: expect.any(String)
+            })
+          })
+        ])
+      );
+    });
+
+    it('should handle empty batch', async () => {
+      await service.storeMessages([]);
+      expect(embeddingService.createEmbedding).not.toHaveBeenCalled();
+      expect(pineconeService.upsertVectors).not.toHaveBeenCalled();
+    });
+
+    it('should handle embedding errors', async () => {
+      const messages = [
+        { id: 'msg1', content: 'content 1', metadata: { userId: 'user1' } }
+      ];
+
+      jest.spyOn(embeddingService, 'createEmbedding')
+        .mockRejectedValue(new Error('Embedding failed'));
+
+      await expect(service.storeMessages(messages))
         .rejects
         .toThrow('Embedding failed');
     });

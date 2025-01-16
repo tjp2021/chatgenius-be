@@ -3,12 +3,15 @@ import { AiService } from '../lib/ai.service';
 import { PrismaService } from '../lib/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestException } from '@nestjs/common';
+import { VectorStoreService } from '../lib/vector-store.service';
 import * as path from 'path';
 import * as fs from 'fs';
+import PDFDocument from 'pdfkit';
 
 describe('AiService - Document Content Extraction', () => {
   let aiService: AiService;
   let prismaService: PrismaService;
+  let vectorStore: VectorStoreService;
 
   const mockPrismaService = {
     file: {
@@ -18,6 +21,11 @@ describe('AiService - Document Content Extraction', () => {
 
   const mockConfigService = {
     get: jest.fn().mockReturnValue('fake-api-key')
+  };
+
+  const mockVectorStore = {
+    storeMessage: jest.fn(),
+    searchMessages: jest.fn()
   };
 
   beforeEach(async () => {
@@ -31,12 +39,20 @@ describe('AiService - Document Content Extraction', () => {
         {
           provide: ConfigService,
           useValue: mockConfigService
+        },
+        {
+          provide: VectorStoreService,
+          useValue: mockVectorStore
         }
       ],
     }).compile();
 
     aiService = module.get<AiService>(AiService);
     prismaService = module.get<PrismaService>(PrismaService);
+    vectorStore = module.get<VectorStoreService>(VectorStoreService);
+
+    // Clear all mocks before each test
+    jest.clearAllMocks();
   });
 
   it('should throw BadRequestException when file not found', async () => {
@@ -97,5 +113,59 @@ describe('AiService - Document Content Extraction', () => {
       
       expect(result).toBe(fileContent);
     }
+  });
+
+  it('should extract content from text file', async () => {
+    // Setup test file
+    const testContent = 'This is a test text file content.\nIt has multiple lines.\nEnd of content.';
+    const testFilePath = path.join(__dirname, 'fixtures', 'test.txt');
+    
+    // Ensure test directory exists
+    const fixturesDir = path.join(__dirname, 'fixtures');
+    if (!fs.existsSync(fixturesDir)) {
+      fs.mkdirSync(fixturesDir);
+    }
+    
+    // Write test content
+    fs.writeFileSync(testFilePath, testContent);
+    
+    // Mock file lookup
+    mockPrismaService.file.findUnique.mockResolvedValue({
+      id: 'test-file-id',
+      type: 'text/plain',
+      url: testFilePath
+    });
+
+    try {
+      // Execute
+      const result = await aiService.extractDocumentContent('test-file-id');
+      
+      // Verify
+      expect(result).toBe(testContent);
+    } finally {
+      // Cleanup
+      if (fs.existsSync(testFilePath)) {
+        fs.unlinkSync(testFilePath);
+      }
+    }
+  });
+
+  it('should extract content from PDF file', async () => {
+    const testFilePath = path.join(__dirname, 'fixtures', 'canelo-analysis.pdf');
+    
+    // Mock file lookup
+    mockPrismaService.file.findUnique.mockResolvedValue({
+      id: 'test-file-id',
+      type: 'application/pdf',
+      url: testFilePath,
+    });
+
+    // Extract content
+    const result = await aiService.extractDocumentContent('test-file-id');
+    
+    // Verify content
+    expect(typeof result).toBe('string');
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.toLowerCase()).toContain('canelo'); // Should contain the boxer's name
   });
 }); 

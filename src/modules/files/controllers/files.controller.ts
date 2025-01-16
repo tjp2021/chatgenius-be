@@ -99,7 +99,7 @@ export class FilesController {
       fileSize: 5 * 1024 * 1024, // 5MB
     },
     fileFilter: (req, file, callback) => {
-      const allowedMimeTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+      const allowedMimeTypes = ['image/jpeg', 'image/png', 'application/pdf', 'text/plain'];
       if (!allowedMimeTypes.includes(file.mimetype)) {
         callback(new BadRequestException(`Invalid file type. Allowed types: ${allowedMimeTypes.join(', ')}`), false);
       }
