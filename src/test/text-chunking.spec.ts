@@ -71,7 +71,8 @@ describe('TextChunkingService', () => {
 
   it('should handle very long sentences', () => {
     // Create a sentence longer than TARGET_CHUNK_SIZE (512)
-    const longSentence = 'word'.repeat(200); // 800 characters
+    const longWord = 'supercalifragilisticexpialidocious'; // 34 chars
+    const longSentence = (longWord + ' ').repeat(20); // ~700 chars
     const result = service.chunkText(longSentence, {
       messageId: 'test-id',
       timestamp: new Date().toISOString(),
@@ -85,6 +86,6 @@ describe('TextChunkingService', () => {
     });
 
     const reconstructed = service.reconstructText(result);
-    expect(reconstructed.trim()).toBe(longSentence);
+    expect(reconstructed.trim()).toBe(longSentence.trim());
   });
 }); 

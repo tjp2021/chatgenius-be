@@ -20,6 +20,37 @@ export class TextChunkingService {
   private readonly TARGET_CHUNK_SIZE = 512;
   private readonly MIN_CHUNK_SIZE = 100;
 
+  private createChunk(content: string, metadata: Omit<ChunkMetadata, 'chunkIndex' | 'totalChunks'>, index: number): TextChunk {
+    return {
+      content: content.trim(),
+      metadata: {
+        ...metadata,
+        chunkIndex: index,
+        totalChunks: 0 // Placeholder, updated after all chunks created
+      }
+    };
+  }
+
+  private splitLongSentence(sentence: string): string[] {
+    const words = sentence.split(' ');
+    const chunks: string[] = [];
+    let currentChunk = '';
+
+    for (const word of words) {
+      if (currentChunk.length + word.length + 1 > this.TARGET_CHUNK_SIZE && currentChunk.length >= this.MIN_CHUNK_SIZE) {
+        chunks.push(currentChunk.trim());
+        currentChunk = '';
+      }
+      currentChunk += (currentChunk ? ' ' : '') + word;
+    }
+
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+
+    return chunks;
+  }
+
   chunkText(
     text: string,
     metadata: Omit<ChunkMetadata, 'chunkIndex' | 'totalChunks'>
@@ -35,32 +66,35 @@ export class TextChunkingService {
 
     for (const sentence of sentences) {
       const trimmedSentence = sentence.trim();
-      // If adding this sentence exceeds target size, start new chunk
+      
+      // If sentence is longer than target size, split it
+      if (trimmedSentence.length > this.TARGET_CHUNK_SIZE) {
+        // First, add current chunk if not empty
+        if (currentChunk.trim()) {
+          chunks.push(this.createChunk(currentChunk, metadata, chunks.length));
+          currentChunk = '';
+        }
+        
+        // Split and add long sentence chunks
+        const sentenceChunks = this.splitLongSentence(trimmedSentence);
+        sentenceChunks.forEach(chunk => {
+          chunks.push(this.createChunk(chunk, metadata, chunks.length));
+        });
+        continue;
+      }
+
+      // Handle normal-sized sentences
       if (currentChunk.length + trimmedSentence.length > this.TARGET_CHUNK_SIZE && 
           currentChunk.length >= this.MIN_CHUNK_SIZE) {
-        chunks.push({
-          content: currentChunk.trim(),
-          metadata: {
-            ...metadata,
-            chunkIndex: chunks.length,
-            totalChunks: 0 // Placeholder, updated after all chunks created
-          }
-        });
+        chunks.push(this.createChunk(currentChunk, metadata, chunks.length));
         currentChunk = '';
       }
-      currentChunk += trimmedSentence + ' ';
+      currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
     }
 
     // Add final chunk if not empty
     if (currentChunk.trim()) {
-      chunks.push({
-        content: currentChunk.trim(),
-        metadata: {
-          ...metadata,
-          chunkIndex: chunks.length,
-          totalChunks: 0
-        }
-      });
+      chunks.push(this.createChunk(currentChunk, metadata, chunks.length));
     }
 
     // Update total chunks count

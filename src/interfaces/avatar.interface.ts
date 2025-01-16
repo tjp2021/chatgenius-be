@@ -1,29 +1,22 @@
+export interface MessageAnalysis {
+  timestamp: Date;
+  lastMessageId: string;
+  analysis: string;
+}
+
 export interface AvatarAnalysisData {
-  messageAnalysis: {
-    timestamp: Date;
-    lastMessageId: string;
-    analysis: string;
-  };
+  messageAnalysis: MessageAnalysis;
 }
 
 export interface AvatarAnalysis {
   id: string;
   userId: string;
-  messageAnalysis: {
-    timestamp: Date;
-    lastMessageId: string;
-    analysis: string;
-  };
-  documentAnalysis?: {
-    timestamp: Date;
-    lastFileId: string;
-    analysis: string;
-  };
+  messageAnalysis: MessageAnalysis;
   updatedAt: Date;
 }
 
-export interface AvatarUpdateOptions {
-  userId: string;
-  lastMessageId?: string;
-  lastFileId?: string;
+export interface IAvatarService {
+  createAvatar(userId: string): Promise<AvatarAnalysis>;
+  generateResponse(userId: string, prompt: string): Promise<string>;
+  updateAvatar(userId: string): Promise<AvatarAnalysis>;
 } 
