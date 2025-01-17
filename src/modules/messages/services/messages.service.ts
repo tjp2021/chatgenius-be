@@ -451,21 +451,28 @@ export class MessagesService {
   async searchMessages(
     userId: string, 
     query: string,
-    options: SearchOptions = {}
+    options: SearchOptions = { userId }
   ): Promise<SearchResult<MessageSearchResult>> {
     const { 
       limit = 20,
       cursor,
       minScore = 0.5,
       searchType = 'semantic',
-      channelId
+      channelId,
+      threadId,
+      fromUserId
     } = options;
 
-    console.log('🔍 [DEBUG] Starting search with:', {
+    console.log('🔍 [MessagesService] Starting search with:', {
       userId,
       query,
       channelId,
-      searchType
+      searchType,
+      threadId,
+      fromUserId,
+      limit,
+      cursor,
+      minScore
     });
 
     // Get all channels the user has access to
@@ -474,24 +481,108 @@ export class MessagesService {
       select: { channelId: true }
     });
 
-    console.log('🔍 [DEBUG] Channel memberships:', {
+    console.log('🔍 [MessagesService] Channel memberships:', {
       userId,
-      memberships: JSON.stringify(memberships)
+      memberships: JSON.stringify(memberships),
+      accessibleChannels: memberships.map(m => m.channelId)
     });
+
+    // If thread search, find all messages in the thread
+    if (searchType === 'thread') {
+      console.log('🔍 [MessagesService] Performing thread search for:', {
+        threadId,
+        channelId,
+        accessibleChannels: memberships.map(m => m.channelId)
+      });
+      
+      // First verify the thread root message exists and user has access
+      const rootMessage = await this.prisma.message.findFirst({
+        where: { 
+          id: threadId,
+          channelId: { in: channelId ? [channelId] : memberships.map(m => m.channelId) }
+        }
+      });
+
+      console.log('🔍 [MessagesService] Thread root message:', {
+        found: !!rootMessage,
+        messageId: rootMessage?.id,
+        channelId: rootMessage?.channelId
+      });
+
+      if (!rootMessage) {
+        console.log('⚠️ [MessagesService] Thread root message not found or no access:', threadId);
+        return { items: [], pageInfo: { hasNextPage: false }, total: 0 };
+      }
+
+      // Get all messages in the thread
+      const threadMessages = await this.prisma.message.findMany({
+        where: {
+          OR: [
+            { id: threadId },
+            { replyToId: threadId }
+          ],
+          channelId: rootMessage.channelId
+        },
+        orderBy: { createdAt: 'asc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              imageUrl: true,
+            },
+          },
+          replyTo: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  imageUrl: true,
+                },
+              },
+            },
+          },
+        }
+      });
+
+      console.log('🔍 [MessagesService] Found thread messages:', {
+        count: threadMessages.length,
+        threadId,
+        channelId: rootMessage.channelId,
+        messageIds: threadMessages.map(m => m.id)
+      });
+
+      return {
+        items: threadMessages.map(msg => ({
+          ...msg,
+          score: 1,
+          user: msg.user,
+          replyTo: msg.replyTo ?? undefined
+        })),
+        pageInfo: { hasNextPage: false },
+        total: threadMessages.length
+      };
+    }
 
     const channelIds = channelId ? [channelId] : memberships.map(m => m.channelId);
     
-    console.log('🔍 [DEBUG] Will search in channels:', channelIds);
+    console.log('🔍 [MessagesService] Will search in channels:', {
+      channelIds,
+      searchType,
+      query
+    });
 
     if (channelIds.length === 0) {
-      console.log('⚠️ [DEBUG] User has no channel access:', userId);
+      console.log('⚠️ [MessagesService] User has no channel access:', userId);
       return { items: [], pageInfo: { hasNextPage: false }, total: 0 };
     }
 
     if (searchType === 'text') {
-      console.log('🔍 [DEBUG] Performing text search:', {
+      console.log('🔍 [MessagesService] Performing text search:', {
         query,
-        channels: channelIds.join(', ')
+        channels: channelIds.join(', '),
+        fromUserId
       });
 
       // First verify all messages in the channels
@@ -500,9 +591,9 @@ export class MessagesService {
         select: { id: true, content: true, channelId: true }
       });
       
-      console.log('🔍 [DEBUG] Found messages:', {
+      console.log('🔍 [MessagesService] Found messages:', {
         total: allMessages.length,
-        sample: JSON.stringify(allMessages.slice(0, 2))
+        sample: allMessages.slice(0, 2)
       });
 
       const where = {
@@ -513,7 +604,11 @@ export class MessagesService {
         }
       };
 
-      console.log('🔍 [DEBUG] Search where clause:', JSON.stringify(where));
+      if (fromUserId) {
+        where['userId'] = fromUserId;
+      }
+
+      console.log('🔍 [MessagesService] Text search where clause:', JSON.stringify(where));
 
       const messages = await this.prisma.message.findMany({
         where,
@@ -547,7 +642,7 @@ export class MessagesService {
 
       const total = await this.prisma.message.count({ where });
       
-      console.log('🔍 [DEBUG] Search results:', {
+      console.log('🔍 [MessagesService] Search results:', {
         matches: messages.length,
         total,
         firstMatch: messages[0] ? JSON.stringify(messages[0]) : 'none'
@@ -580,7 +675,7 @@ export class MessagesService {
     }
 
     // Search for similar messages in accessible channels
-    console.log('🔍 [DEBUG] Calling vectorStoreService.findSimilarMessages with:', {
+    console.log('🔍 [MessagesService] Calling vectorStoreService.findSimilarMessages with:', {
       query,
       channelIds,
       cursorData: cursorData ? {
@@ -601,7 +696,7 @@ export class MessagesService {
       })
     });
 
-    console.log('🔍 [DEBUG] Vector search results:', {
+    console.log('🔍 [MessagesService] Vector search results:', {
       resultsCount: vectorResults?.length,
       firstResult: vectorResults?.[0] ? {
         id: vectorResults[0].id,
@@ -661,7 +756,7 @@ export class MessagesService {
       }
     });
 
-    console.log('🔍 [DEBUG] Messages found in database:', {
+    console.log('🔍 [MessagesService] Messages found in database:', {
       count: messages.length,
       ids: messages.map(m => m.id),
       vectorIds: availablePageResults.map(r => r.id)

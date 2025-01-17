@@ -191,6 +191,28 @@ export class SearchController {
             searchType: 'semantic'
           });
 
+        case 'thread':
+          const messageId = query.trim();
+          if (!messageId) {
+            throw new BadRequestException('Message ID is required for /thread command');
+          }
+
+          console.log('🔍 [SearchController] Performing thread search:', {
+            messageId,
+            userId: req.auth.userId,
+            channelId: searchRequest.channelId
+          });
+
+          return this.searchService.search('', {
+            userId: req.auth.userId,
+            limit: searchRequest.limit,
+            cursor: searchRequest.cursor,
+            minScore: searchRequest.minScore,
+            channelId: searchRequest.channelId,
+            threadId: messageId,
+            searchType: 'thread'
+          });
+
         default:
           console.log('⚠️ [SearchController] Unknown command:', command);
           return this.searchService.search(query, {

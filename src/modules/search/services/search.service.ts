@@ -1,16 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { MessagesService } from '../../messages/services/messages.service';
 import { ResponseSynthesisService } from '../../../lib/response-synthesis.service';
-
-export interface SearchOptions {
-  userId: string;
-  limit?: number;
-  cursor?: string;
-  minScore?: number;
-  fromUserId?: string;
-  channelId?: string;
-  searchType?: 'semantic' | 'text';
-}
+import { SearchOptions } from '../../messages/interfaces/search.interface';
 
 @Injectable()
 export class SearchService {
@@ -30,6 +21,7 @@ export class SearchService {
       options.userId,
       query,
       {
+        userId: options.userId,
         limit: options.limit,
         cursor: options.cursor,
         minScore: options.minScore,
@@ -57,6 +49,7 @@ export class SearchService {
 
     // Get relevant messages
     const messages = await this.messagesService.searchMessages(userId, query, {
+      userId,
       limit: 5,
       minScore: 0.5,
       searchType: 'semantic'

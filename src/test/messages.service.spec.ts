@@ -354,8 +354,9 @@ describe('MessagesService', () => {
       // First page: return first 2 messages
       mockPrismaService.message.findMany.mockResolvedValueOnce(mockMessages.slice(0, 2));
 
-      const result = await service.searchMessages('user1', 'test query', { 
-        limit: 2 
+      const result = await service.searchMessages('user1', 'test query', {
+        userId: 'user1',
+        limit: 2
       }) as SearchResult<MessageSearchResult>;
 
       // Verify pagination structure
@@ -378,6 +379,7 @@ describe('MessagesService', () => {
 
       // Test next page
       const nextPage = await service.searchMessages('user1', 'test query', {
+        userId: 'user1',
         cursor: result.pageInfo.endCursor,
         limit: 2
       }) as SearchResult<MessageSearchResult>;
@@ -407,8 +409,9 @@ describe('MessagesService', () => {
 
       mockPrismaService.message.findMany.mockResolvedValue(mockMessages);
 
-      const result = await service.searchMessages('user1', 'test query', { 
-        minScore: 0.5 
+      const result = await service.searchMessages('user1', 'test query', {
+        userId: 'user1',
+        minScore: 0.5
       }) as SearchResult<MessageSearchResult>;
 
       expect(result.items.length).toBe(2);
