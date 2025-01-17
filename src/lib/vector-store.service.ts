@@ -51,7 +51,7 @@ interface PineconeChunkMetadata extends ChunkMetadata {
 @Injectable()
 export class VectorStoreService {
   // Decay factor for time-based scoring (can be adjusted)
-  private readonly TIME_DECAY_FACTOR = 0.5;
+  private readonly TIME_DECAY_FACTOR = 0.1;
   // Channel relevance boost factor
   private readonly CHANNEL_BOOST_FACTOR = 1.2;
   // Add thread boost factor
