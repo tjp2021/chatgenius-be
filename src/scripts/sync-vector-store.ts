@@ -26,7 +26,7 @@ async function main() {
 
   try {
     // Get all messages from the database
-    console.log('Fetching messages from database...');
+    console.log('\nFetching messages from database...');
     const messages = await prisma.message.findMany({
       include: {
         channel: true,

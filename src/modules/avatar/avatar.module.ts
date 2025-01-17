@@ -4,6 +4,7 @@ import { AvatarService } from '../../lib/avatar.service';
 import { PrismaModule } from '../../lib/prisma.module';
 import { ResponseSynthesisModule } from '../../lib/response-synthesis.module';
 import { VectorStoreModule } from '../../lib/vector-store.module';
+import { AiService } from '../../lib/ai.service';
 
 @Module({
   imports: [
@@ -12,7 +13,7 @@ import { VectorStoreModule } from '../../lib/vector-store.module';
     VectorStoreModule
   ],
   controllers: [AvatarController],
-  providers: [AvatarService],
+  providers: [AvatarService, AiService],
   exports: [AvatarService]
 })
 export class AvatarModule {} 

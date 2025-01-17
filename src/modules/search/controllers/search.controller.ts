@@ -3,6 +3,16 @@ import { SearchService } from '../services/search.service';
 import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
+export interface SearchResponse {
+  items?: any[];
+  pageInfo?: {
+    hasNextPage: boolean;
+  };
+  total?: number;
+  response?: string;
+  type?: 'rag';
+}
+
 export class SearchRequestDto {
   @ApiProperty({
     description: 'The search query. Can be a direct query or a command (e.g., /from user_id query)',
@@ -49,7 +59,7 @@ export class SearchController {
   ) {}
 
   @Post()
-  async search(@Body() searchRequest: SearchRequestDto) {
+  async search(@Body() searchRequest: SearchRequestDto): Promise<SearchResponse> {
     const userId = 'user_001'; // Using live user ID
     this.logger.log(`Search request from user ${userId}: ${JSON.stringify(searchRequest)}`);
 

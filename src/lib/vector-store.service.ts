@@ -380,4 +380,8 @@ export class VectorStoreService {
       })
     );
   }
+
+  async clearVectors() {
+    await this.pinecone.clearVectors();
+  }
 } 

@@ -10,11 +10,13 @@ interface SearchResult {
   total: number;
 }
 
-interface SearchOptions {
+export interface SearchOptions {
   userId?: string;
   limit?: number;
   minScore?: number;
   searchType?: 'semantic' | 'text';
+  cursor?: string;
+  fromUserId?: string;
 }
 
 @Injectable()
@@ -37,12 +39,13 @@ export class SearchService {
   async search(query: string, options: SearchOptions = {}): Promise<SearchResult> {
     this.logger.log(`Searching for query: ${query} with options:`, options);
     
-    const { userId, limit = 10, minScore = 0.5, searchType = 'semantic' } = options;
+    const { userId, limit = 10, minScore = 0.5, searchType = 'semantic', fromUserId } = options;
     
     return this.messagesService.searchMessages(userId || 'test-user-123', query, {
       limit,
       minScore,
-      searchType
+      searchType,
+      fromUserId
     });
   }
 
@@ -68,5 +71,42 @@ export class SearchService {
     });
 
     return response.response;
+  }
+
+  async getThreadMessages(messageId: string, userId: string): Promise<{ messages: any[] }> {
+    this.logger.log(`Getting thread messages for messageId: ${messageId}`);
+    return this.messagesService.getThreadMessages(messageId, userId);
+  }
+
+  async generateSummary(userId: string, query: string): Promise<{ summary: string; context: any[] }> {
+    this.logger.log(`Generating summary for query: ${query}`);
+    
+    // Get relevant messages
+    const searchResults = await this.messagesService.searchMessages(userId, query, {
+      limit: 10,
+      minScore: 0.6,
+      searchType: 'semantic'
+    });
+
+    if (searchResults.items.length === 0) {
+      return {
+        summary: "No relevant messages found to summarize.",
+        context: []
+      };
+    }
+
+    // Format messages for context
+    const contextMessages = this.formatContextMessages(searchResults.items);
+
+    // Generate summary using context
+    const response = await this.synthesis.synthesizeResponse({
+      channelId: 'summary-response',
+      prompt: `Generate a concise summary of these messages:\n\n${contextMessages}`,
+    });
+
+    return {
+      summary: response.response,
+      context: searchResults.items
+    };
   }
 } 

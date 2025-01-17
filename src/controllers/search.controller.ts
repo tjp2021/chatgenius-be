@@ -112,23 +112,6 @@ export class SearchController {
           });
         }
 
-        case 'thread': {
-          // Get thread context for a message
-          const messageId = query.trim();
-          if (!messageId) {
-            throw new BadRequestException('Message ID is required for /thread command');
-          }
-
-          const threadMessages = await this.messagesService.getThreadMessages(messageId, userId);
-          return {
-            items: threadMessages.messages,
-            pageInfo: {
-              hasNextPage: false
-            },
-            total: threadMessages.messages.length
-          };
-        }
-
         case 'summary': {
           // Search for relevant messages first
           const messages = await this.messagesService.searchMessages(userId, query, {

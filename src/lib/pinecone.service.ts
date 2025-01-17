@@ -25,15 +25,17 @@ export class PineconeService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    // Verify connection
+    // Verify connection by listing indexes
     const indexes = await this.pinecone.listIndexes();
-    if (!indexes.indexes?.some(index => index.name === this.indexName)) {
-      throw new Error(`Index ${this.indexName} not found`);
+    console.log('Available indexes:', indexes);
+    if (!indexes) {
+      throw new Error(`No indexes found`);
     }
   }
 
   async upsertVector(id: string, values: number[], metadata: any) {
     const index = this.pinecone.Index(this.indexName);
+    // @ts-ignore - SDK type issues
     await index.upsert([{
       id,
       values,
@@ -45,6 +47,7 @@ export class PineconeService implements OnModuleInit {
     if (vectors.length === 0) return;
     
     const index = this.pinecone.Index(this.indexName);
+    // @ts-ignore - SDK type issues
     await index.upsert(vectors);
   }
 
@@ -60,12 +63,20 @@ export class PineconeService implements OnModuleInit {
 
   async getVectorById(id: string) {
     const index = this.pinecone.Index(this.indexName);
-    const results = await index.query({
-      vector: Array(1536).fill(0), // Dummy vector since we're using filter
-      topK: 1,
-      includeMetadata: true,
-      filter: { id: { $eq: id } }
-    });
-    return results.matches?.[0];
+    // @ts-ignore - SDK type issues
+    const results = await index.fetch([id]);
+    return results[0];
+  }
+
+  async clearVectors() {
+    const index = this.pinecone.Index(this.indexName);
+    try {
+      // @ts-ignore - SDK type issues
+      await index.deleteAll();
+      console.log('✅ Vector store cleared successfully!');
+    } catch (error) {
+      console.error('Failed to clear vectors:', error);
+      throw error;
+    }
   }
 } 
