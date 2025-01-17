@@ -161,11 +161,11 @@ async function createMessages() {
     { userId: 'test_user_2', channelId: 'test_channel', content: "For local development, you can use minikube. First, install it using brew install minikube, then start it with minikube start." },
     { userId: 'test_user_1', channelId: 'test_channel', content: "We use GitHub Actions for CI/CD. Every PR triggers tests and builds a new container image." },
     { userId: 'test_user_2', channelId: 'test_channel', content: "I'm getting a 503 error in production after the latest deployment. Any ideas?" },
-    { userId: 'test_user_1', channelId: 'test_channel', content: "Check the pod logs. Might be a memory issue. Run kubectl logs <pod-name> to investigate." },
-    { userId: 'test_user_2', channelId: 'test_channel', content: "Found the issue - one of our services was OOMKilled. We need to increase the memory limit in the deployment yaml." },
+    { userId: 'test_user_1', channelId: 'test_channel', content: "Check the pod logs. Might be a memory issue. Run kubectl logs <pod-name> to investigate.", replyToId: 'msg_055' },
+    { userId: 'test_user_2', channelId: 'test_channel', content: "Found the issue - one of our services was OOMKilled. We need to increase the memory limit in the deployment yaml.", replyToId: 'msg_055' },
     { userId: 'test_user_1', channelId: 'test_channel', content: "We should add rate limiting to our API endpoints. Getting too many requests in prod." },
-    { userId: 'test_user_2', channelId: 'test_channel', content: "Good idea. We can use Redis for rate limiting. Here's a simple implementation using the rate-limiter-flexible package: [code example]" },
-    { userId: 'test_user_1', channelId: 'test_channel', content: "Let's also add retry logic with exponential backoff for failed requests." },
+    { userId: 'test_user_2', channelId: 'test_channel', content: "Good idea. We can use Redis for rate limiting. Here's a simple implementation using the rate-limiter-flexible package: [code example]", replyToId: 'msg_058' },
+    { userId: 'test_user_1', channelId: 'test_channel', content: "Let's also add retry logic with exponential backoff for failed requests.", replyToId: 'msg_058' },
 
     // Add help/documentation messages
     { userId: 'test_user_1', channelId: 'test_channel', content: "To reset your password, go to Settings > Security and click on 'Reset Password'. Follow the email instructions." },

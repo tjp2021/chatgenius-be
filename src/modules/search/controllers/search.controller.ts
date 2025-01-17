@@ -200,10 +200,21 @@ export class SearchController {
           console.log('🔍 [SearchController] Performing thread search:', {
             messageId,
             userId: req.auth.userId,
-            channelId: searchRequest.channelId
+            channelId: searchRequest.channelId,
+            query: searchRequest.query,
+            rawQuery: query,
+            searchOptions: {
+              userId: req.auth.userId,
+              limit: searchRequest.limit,
+              cursor: searchRequest.cursor,
+              minScore: searchRequest.minScore,
+              channelId: searchRequest.channelId,
+              threadId: messageId,
+              searchType: 'thread'
+            }
           });
 
-          return this.searchService.search('', {
+          const threadResult = await this.searchService.search('', {
             userId: req.auth.userId,
             limit: searchRequest.limit,
             cursor: searchRequest.cursor,
@@ -212,6 +223,15 @@ export class SearchController {
             threadId: messageId,
             searchType: 'thread'
           });
+
+          console.log('🔍 [SearchController] Thread search result:', {
+            messageId,
+            hasItems: threadResult.items?.length > 0,
+            total: threadResult.total,
+            firstItem: threadResult.items?.[0]
+          });
+
+          return threadResult;
 
         default:
           console.log('⚠️ [SearchController] Unknown command:', command);

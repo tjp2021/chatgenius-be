@@ -19,9 +19,15 @@ export class ClerkAuthGuard implements CanActivate {
     // Debug: Log all headers
     console.log('Request headers:', request.headers);
     
-    // TEMPORARY: Use test_user_1 for development
+    // Get userId from X-User-Id header
+    const userId = request.headers['x-user-id'];
+    if (!userId) {
+      throw new UnauthorizedException('No user ID provided');
+    }
+
+    // Store user data in request
     request.auth = {
-      userId: 'test_user_1'
+      userId
     };
     return true;
 

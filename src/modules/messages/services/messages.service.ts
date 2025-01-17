@@ -318,21 +318,18 @@ export class MessagesService {
       throw new ForbiddenException('You do not have access to this thread');
     }
 
-    // Get thread messages with cursor-based pagination
-    const messages = await this.prisma.message.findMany({
+    // Get all messages in the thread
+    const threadMessages = await this.prisma.message.findMany({
       where: {
-        replyToId: threadId,
+        channelId: threadStarter.channelId,
+        OR: [
+          { id: threadId },
+          { replyToId: threadId },
+          { replyTo: { replyToId: threadId } },
+          { replyTo: { replyTo: { replyToId: threadId } } }
+        ]
       },
-      take: limit,
-      ...(cursor && {
-        cursor: {
-          id: cursor,
-        },
-        skip: 1, // Skip the cursor
-      }),
-      orderBy: {
-        createdAt: 'asc', // Thread messages in chronological order
-      },
+      orderBy: { createdAt: 'asc' },
       include: {
         user: {
           select: {
@@ -341,7 +338,7 @@ export class MessagesService {
             imageUrl: true,
           },
         },
-        reactions: {
+        replyTo: {
           include: {
             user: {
               select: {
@@ -352,13 +349,19 @@ export class MessagesService {
             },
           },
         },
-      },
+        _count: {
+          select: { replies: true }
+        }
+      }
     });
 
-    const nextCursor = messages.length === limit ? messages[messages.length - 1].id : null;
+    const nextCursor = threadMessages.length === limit ? threadMessages[threadMessages.length - 1].id : null;
 
     return {
-      messages,
+      messages: threadMessages.map(message => ({
+        ...message,
+        hasReplies: message._count.replies > 0,
+      })),
       nextCursor,
     };
   }
@@ -489,24 +492,52 @@ export class MessagesService {
 
     // If thread search, find all messages in the thread
     if (searchType === 'thread') {
-      console.log('🔍 [MessagesService] Performing thread search for:', {
+      if (!threadId) {
+        console.log('⚠️ [MessagesService] No threadId provided for thread search');
+        return { items: [], pageInfo: { hasNextPage: false }, total: 0 };
+      }
+
+      console.log('🔍 [MessagesService] Starting thread search:', {
         threadId,
         channelId,
-        accessibleChannels: memberships.map(m => m.channelId)
+        userId,
+        accessibleChannels: memberships.map(m => m.channelId),
+        options: JSON.stringify(options)
       });
+
+      // First verify user has access to the channel
+      const accessibleChannels = memberships.map(m => m.channelId);
       
-      // First verify the thread root message exists and user has access
+      // Find the root message
       const rootMessage = await this.prisma.message.findFirst({
         where: { 
           id: threadId,
-          channelId: { in: channelId ? [channelId] : memberships.map(m => m.channelId) }
+          channelId: { in: accessibleChannels }
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              imageUrl: true,
+            },
+          },
+          _count: {
+            select: { replies: true }
+          }
         }
       });
 
-      console.log('🔍 [MessagesService] Thread root message:', {
+      console.log('🔍 [MessagesService] Thread root message details:', {
         found: !!rootMessage,
         messageId: rootMessage?.id,
-        channelId: rootMessage?.channelId
+        channelId: rootMessage?.channelId,
+        replyCount: rootMessage?._count?.replies,
+        content: rootMessage?.content,
+        where: JSON.stringify({
+          id: threadId,
+          channelId: { in: accessibleChannels }
+        })
       });
 
       if (!rootMessage) {
@@ -517,11 +548,13 @@ export class MessagesService {
       // Get all messages in the thread
       const threadMessages = await this.prisma.message.findMany({
         where: {
+          channelId: rootMessage.channelId,
           OR: [
             { id: threadId },
-            { replyToId: threadId }
-          ],
-          channelId: rootMessage.channelId
+            { replyToId: threadId },
+            { replyTo: { replyToId: threadId } },
+            { replyTo: { replyTo: { replyToId: threadId } } }
+          ]
         },
         orderBy: { createdAt: 'asc' },
         include: {
@@ -543,16 +576,34 @@ export class MessagesService {
               },
             },
           },
+          _count: {
+            select: { replies: true }
+          }
         }
       });
 
-      console.log('🔍 [MessagesService] Found thread messages:', {
+      console.log('🔍 [MessagesService] Thread messages details:', {
         count: threadMessages.length,
         threadId,
         channelId: rootMessage.channelId,
-        messageIds: threadMessages.map(m => m.id)
+        messages: threadMessages.map(m => ({
+          id: m.id,
+          content: m.content,
+          replyToId: m.replyToId,
+          userId: m.user.id
+        })),
+        where: JSON.stringify({
+          channelId: rootMessage.channelId,
+          OR: [
+            { id: threadId },
+            { replyToId: threadId },
+            { replyTo: { replyToId: threadId } },
+            { replyTo: { replyTo: { replyToId: threadId } } }
+          ]
+        })
       });
 
+      // Return both the root message and replies
       return {
         items: threadMessages.map(msg => ({
           ...msg,

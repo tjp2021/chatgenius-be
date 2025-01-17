@@ -83,6 +83,16 @@ export class VectorStoreService {
     return threadMessages.includes(messageId) ? this.THREAD_BOOST_FACTOR : 1;
   }
 
+  private cleanMetadata(metadata: any): any {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(metadata)) {
+      if (value !== null && value !== undefined) {
+        cleaned[key] = value;
+      }
+    }
+    return cleaned;
+  }
+
   private async storeChunk(chunk: TextChunk): Promise<void> {
     const vector = await this.embedding.createEmbedding(chunk.content);
     await this.pinecone.upsertVector(
@@ -96,27 +106,34 @@ export class VectorStoreService {
   }
 
   private async storeChunkBatch(chunks: TextChunk[]): Promise<void> {
+    console.log(`Creating embeddings for ${chunks.length} chunks...`);
     // Create embeddings in parallel
     const embeddings = await Promise.all(
       chunks.map(chunk => this.embedding.createEmbedding(chunk.content))
     );
+    console.log('Embeddings created successfully');
 
     // Prepare vectors with metadata
     const vectors: Vector[] = chunks.map((chunk, i) => ({
       id: `${chunk.metadata.messageId}_chunk_${chunk.metadata.chunkIndex}`,
       values: embeddings[i],
-      metadata: {
+      metadata: this.cleanMetadata({
         ...chunk.metadata,
         content: chunk.content
-      }
+      })
     }));
+    console.log('Vectors prepared:', vectors.length);
 
     // Store batch in Pinecone
+    console.log('Storing vectors in Pinecone...');
     await this.pinecone.upsertVectors(vectors);
+    console.log('Vectors stored successfully');
   }
 
   async storeMessageBatch(messages: MessageBatch[]): Promise<BatchResult[]> {
     if (messages.length === 0) return [];
+
+    console.log(`Processing batch of ${messages.length} messages...`);
 
     // Validate all messages have channelId
     const invalidMessages = messages.filter(msg => !msg.metadata.channelId);
@@ -129,6 +146,7 @@ export class VectorStoreService {
     
     try {
       // 1. Create chunks for all messages in parallel
+      console.log('Creating chunks for messages...');
       const messageChunks = await Promise.all(
         messages.map(async (msg) => ({
           messageId: msg.id,
@@ -139,12 +157,15 @@ export class VectorStoreService {
           })
         }))
       );
+      console.log('Chunks created successfully');
 
       // 2. Process chunks in batches
       const allChunks = messageChunks.flatMap(mc => mc.chunks);
+      console.log(`Total chunks to process: ${allChunks.length}`);
       
       for (let i = 0; i < allChunks.length; i += batchSize) {
         const chunkBatch = allChunks.slice(i, i + batchSize);
+        console.log(`Processing chunk batch ${i + 1} to ${i + chunkBatch.length}...`);
         await this.storeChunkBatch(chunkBatch);
       }
 
@@ -155,6 +176,7 @@ export class VectorStoreService {
       })));
 
     } catch (error) {
+      console.error('Error in storeMessageBatch:', error);
       // If batch operation fails, mark all as failed
       results.push(...messages.map(msg => ({
         messageId: msg.id,

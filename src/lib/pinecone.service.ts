@@ -34,8 +34,7 @@ export class PineconeService implements OnModuleInit {
   }
 
   async upsertVector(id: string, values: number[], metadata: any) {
-    const index = this.pinecone.Index(this.indexName);
-    // @ts-ignore - SDK type issues
+    const index = this.pinecone.index(this.indexName);
     await index.upsert([{
       id,
       values,
@@ -46,13 +45,16 @@ export class PineconeService implements OnModuleInit {
   async upsertVectors(vectors: Vector[]) {
     if (vectors.length === 0) return;
     
-    const index = this.pinecone.Index(this.indexName);
-    // @ts-ignore - SDK type issues
-    await index.upsert(vectors);
+    const index = this.pinecone.index(this.indexName);
+    await index.upsert(vectors.map(v => ({
+      id: v.id,
+      values: v.values,
+      metadata: v.metadata
+    })));
   }
 
   async queryVectors(values: number[], topK: number = 5, options: QueryOptions = {}) {
-    const index = this.pinecone.Index(this.indexName);
+    const index = this.pinecone.index(this.indexName);
     return await index.query({
       vector: values,
       topK,
@@ -62,16 +64,14 @@ export class PineconeService implements OnModuleInit {
   }
 
   async getVectorById(id: string) {
-    const index = this.pinecone.Index(this.indexName);
-    // @ts-ignore - SDK type issues
+    const index = this.pinecone.index(this.indexName);
     const results = await index.fetch([id]);
-    return results[0];
+    return results.records[id];
   }
 
   async clearVectors() {
-    const index = this.pinecone.Index(this.indexName);
+    const index = this.pinecone.index(this.indexName);
     try {
-      // @ts-ignore - SDK type issues
       await index.deleteAll();
       console.log('✅ Vector store cleared successfully!');
     } catch (error) {
