@@ -228,3 +228,105 @@ describe('RAG Responses', () => {
 - Vector issues: Check Pinecone dashboard
 - AI issues: Review OpenAI logs
 - Context issues: Verify message indexing 
+
+## API Response Structures
+
+### RAG Response
+```typescript
+interface RAGResponse {
+  answer: string;            // AI-generated answer
+  context: RAGContext;       // Retrieved context used
+  metadata: RAGMetadata;     // Additional metadata
+}
+
+interface RAGContext {
+  messages: ContextMessage[];  // Retrieved messages used for context
+  scores: number[];           // Relevance scores for messages
+  channels: string[];         // Channels involved
+}
+
+interface ContextMessage {
+  id: string;                // Message ID
+  content: string;           // Message content
+  metadata: MessageMetadata; // Message metadata
+  score: number;            // Relevance score
+}
+
+interface MessageMetadata {
+  messageId: string;        // Original message ID
+  channelId: string;        // Channel where message was posted
+  userId: string;           // User who sent the message
+  timestamp: number;        // Unix timestamp
+  replyToId?: string;      // Parent message ID if in thread
+  threadId?: string;       // Thread ID if part of thread
+}
+
+interface RAGMetadata {
+  processingTime: number;   // Total processing time in ms
+  tokensUsed: number;      // Total tokens consumed
+  model: string;           // AI model used
+  contextSize: number;     // Number of context messages used
+}
+
+### Error Response
+```typescript
+interface RAGErrorResponse {
+  error: string;           // Error message
+  code: RAGErrorCode;      // Error code
+  details?: any;          // Additional error details
+  status: number;         // HTTP status code
+}
+
+type RAGErrorCode = 
+  | 'CONTEXT_RETRIEVAL_FAILED'  // Could not get relevant context
+  | 'AI_GENERATION_FAILED'      // AI response generation failed
+  | 'INVALID_QUERY'            // Query format invalid
+  | 'UNAUTHORIZED'             // Missing/invalid auth
+  | 'RATE_LIMITED'            // Too many requests
+  | 'INTERNAL_ERROR';         // Server error
+```
+
+### Example Successful Response
+```json
+{
+  "answer": "Based on the conversation history, deployment issues were discussed on January 15th. The main problems identified were pod scheduling and resource limits. The team implemented horizontal pod autoscaling as a solution.",
+  "context": {
+    "messages": [
+      {
+        "id": "msg_123",
+        "content": "We're seeing pod scheduling issues in production",
+        "metadata": {
+          "messageId": "msg_123",
+          "channelId": "devops",
+          "userId": "user_789",
+          "timestamp": 1705334400,
+          "threadId": "thread_456"
+        },
+        "score": 0.92
+      }
+    ],
+    "scores": [0.92],
+    "channels": ["devops"]
+  },
+  "metadata": {
+    "processingTime": 2150,
+    "tokensUsed": 428,
+    "model": "gpt-4-turbo-preview",
+    "contextSize": 1
+  }
+}
+```
+
+### Example Error Response
+```json
+{
+  "error": "Failed to generate AI response",
+  "code": "AI_GENERATION_FAILED",
+  "details": {
+    "reason": "OpenAI API error",
+    "query": "What deployment issues were discussed?",
+    "contextSize": 3
+  },
+  "status": 500
+}
+``` 

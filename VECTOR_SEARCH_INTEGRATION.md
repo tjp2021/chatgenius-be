@@ -290,3 +290,98 @@ For issues with:
 - Vector search: Check Pinecone logs
 - Embeddings: Verify OpenAI API status
 - Integration: Review API responses 
+
+## API Response Structures
+
+### Search Response
+```typescript
+interface SearchResponse {
+  results: SearchResult[];
+  metadata: SearchMetadata;
+}
+
+interface SearchResult {
+  id: string;                // Unique identifier for the message
+  content: string;           // Message content
+  score: number;            // Similarity score (0-1)
+  metadata: MessageMetadata;
+  vector?: number[];        // Optional embedding vector
+}
+
+interface MessageMetadata {
+  messageId: string;        // Original message ID
+  channelId: string;        // Channel where message was posted
+  userId: string;           // User who sent the message
+  timestamp: number;        // Unix timestamp
+  replyToId?: string;      // Parent message ID if in thread
+  threadId?: string;       // Thread ID if part of thread
+  chunkIndex?: number;     // Position in chunked message
+}
+
+interface SearchMetadata {
+  totalResults: number;     // Total number of matches
+  searchTime: number;       // Time taken in ms
+  indexName: string;       // Pinecone index used
+  filter?: any;            // Applied filters if any
+}
+
+### Error Response
+```typescript
+interface ErrorResponse {
+  error: string;           // Error message
+  code: string;           // Error code
+  details?: any;          // Additional error details
+  status: number;         // HTTP status code
+}
+
+// Common error codes:
+type ErrorCode = 
+  | 'INVALID_QUERY'           // Query format invalid
+  | 'EMBEDDING_FAILED'        // Could not create embedding
+  | 'SEARCH_FAILED'          // Vector search failed
+  | 'UNAUTHORIZED'           // Missing/invalid auth
+  | 'RATE_LIMITED'          // Too many requests
+  | 'INTERNAL_ERROR';       // Server error
+```
+
+### Example Successful Response
+```json
+{
+  "results": [
+    {
+      "id": "msg_123",
+      "content": "Discussion about deployment issues",
+      "score": 0.89,
+      "metadata": {
+        "messageId": "msg_123",
+        "channelId": "channel_456",
+        "userId": "user_789",
+        "timestamp": 1707824461,
+        "replyToId": null,
+        "threadId": null
+      }
+    }
+  ],
+  "metadata": {
+    "totalResults": 1,
+    "searchTime": 156,
+    "indexName": "chatgenius-1536",
+    "filter": {
+      "channelId": { "$eq": "channel_456" }
+    }
+  }
+}
+```
+
+### Example Error Response
+```json
+{
+  "error": "Failed to create embedding",
+  "code": "EMBEDDING_FAILED",
+  "details": {
+    "reason": "OpenAI API error",
+    "query": "original search query"
+  },
+  "status": 500
+}
+``` 
