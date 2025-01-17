@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MessagesService } from '../modules/messages/services/messages.service';
-import { ResponseSynthesisService } from './response-synthesis.service';
+import { MessagesService } from '../../messages/services/messages.service';
+import { ResponseSynthesisService } from '../../../lib/response-synthesis.service';
 
 interface SearchResult {
   items: any[];

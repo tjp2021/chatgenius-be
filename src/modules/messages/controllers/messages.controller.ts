@@ -1,8 +1,7 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req, Logger, InternalServerErrorException, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req, Logger, InternalServerErrorException } from '@nestjs/common';
 import { MessagesService } from '../services/messages.service';
 import { CreateMessageDto } from '../dto/create-message.dto';
 import { UpdateMessageDto } from '../dto/update-message.dto';
-import { SearchMessagesDto } from '../dto/search-messages.dto';
 import { GetThreadMessagesDto } from '../dto/get-thread-messages.dto';
 import { ClerkAuthGuard } from '../../../guards/clerk-auth.guard';
 
@@ -12,23 +11,6 @@ export class MessagesController {
   private readonly logger = new Logger(MessagesController.name);
   
   constructor(private readonly messagesService: MessagesService) {}
-
-  /**
-   * Search messages with support for semantic and text-based search
-   */
-  @Post('search')
-  async searchMessages(@Body() searchDto: SearchMessagesDto, @Req() req: any) {
-    if (!req.auth?.userId) {
-      throw new Error('No user ID found in request');
-    }
-
-    return this.messagesService.searchMessages(req.auth.userId, searchDto.query, {
-      limit: searchDto.limit,
-      cursor: searchDto.cursor,
-      minScore: searchDto.minScore,
-      searchType: searchDto.searchType
-    });
-  }
 
   @Get('channel/:channelId')
   async getMessages(
@@ -144,28 +126,6 @@ export class MessagesController {
       return await this.messagesService.getThreadMessages(threadId, req.auth.userId, parsedLimit, cursor);
     } catch (error) {
       this.logger.error(`Error getting thread messages: ${error.message}`, error.stack);
-      throw new InternalServerErrorException(error.message);
-    }
-  }
-
-  /**
-   * Get thread details including starter message and metadata
-   */
-  @Get(':threadId/thread/details')
-  async getThreadDetails(
-    @Param('threadId') threadId: string,
-    @Req() req: any,
-  ) {
-    try {
-      this.logger.log(`Getting thread details for thread ${threadId} by user ${req.auth?.userId}`);
-      
-      if (!req.auth?.userId) {
-        throw new Error('User ID not found in request');
-      }
-      
-      return await this.messagesService.getThreadDetails(threadId, req.auth.userId);
-    } catch (error) {
-      this.logger.error(`Error getting thread details: ${error.message}`, error.stack);
       throw new InternalServerErrorException(error.message);
     }
   }

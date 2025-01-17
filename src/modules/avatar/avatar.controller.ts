@@ -2,12 +2,14 @@ import { Controller, Post, Body, Get, Put, Param, BadRequestException } from '@n
 import { AvatarService } from '../../lib/avatar.service';
 import { AvatarAnalysis } from '../../interfaces/avatar.interface';
 import { VectorStoreService } from '../../lib/vector-store.service';
+import { AiService } from '../../lib/ai.service';
 
 @Controller('avatars')
 export class AvatarController {
   constructor(
     private readonly avatarService: AvatarService,
-    private readonly vectorStore: VectorStoreService
+    private readonly vectorStore: VectorStoreService,
+    private readonly aiService: AiService
   ) {}
 
   @Post()
@@ -72,32 +74,6 @@ export class AvatarController {
     return {
       stored: { messageId, ...data },
       similar,
-    };
-  }
-
-  @Post('search')
-  async searchMessages(
-    @Body() data: {
-      query: string;
-      channelId?: string;
-    }
-  ) {
-    if (!data.query) {
-      throw new BadRequestException('query is required');
-    }
-
-    const results = await this.vectorStore.findSimilarMessages(data.query, {
-      channelId: data.channelId,
-      topK: 5,
-    });
-
-    return {
-      results: results.map(result => ({
-        id: result.id,
-        content: result.content,
-        score: result.score,
-        metadata: result.metadata
-      }))
     };
   }
 } 

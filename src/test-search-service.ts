@@ -70,7 +70,7 @@ async function main() {
     console.log('\n2️⃣ Testing basic search...');
     const basicResults = await searchService.search('When did Views come out?');
     console.log('Basic search results:');
-    basicResults.forEach((result, i) => {
+    basicResults.items.forEach((result, i) => {
       console.log(`${i + 1}. [${result.score.toFixed(3)}] ${result.content}`);
     });
     console.log('✅ Basic search test complete');
@@ -79,7 +79,7 @@ async function main() {
     console.log('\n3️⃣ Testing user-specific search...');
     const userResults = await searchService.search('Views album', { userId: 'user1' });
     console.log('User-specific search results:');
-    userResults.forEach((result, i) => {
+    userResults.items.forEach((result, i) => {
       console.log(`${i + 1}. [${result.score.toFixed(3)}] ${result.content}`);
       console.log(`   User: ${result.metadata?.userId}`);
       console.log(`   Context: ${JSON.stringify(result.metadata?.context)}`);
@@ -105,7 +105,7 @@ async function main() {
     // Test 4: Score threshold
     console.log('\n5️⃣ Testing score threshold...');
     const thresholdTest = await searchService.search('completely unrelated query');
-    console.log(`Results below threshold (${thresholdTest.length} expected): ${thresholdTest.length}`);
+    console.log(`Results below threshold (${thresholdTest.items.length} expected): ${thresholdTest.items.length}`);
     console.log('✅ Score threshold test complete');
 
     console.log('\n✅ All tests completed successfully!');

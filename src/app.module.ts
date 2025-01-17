@@ -15,6 +15,7 @@ import { ChannelsModule } from './modules/channels/channels.module';
 import { VectorStoreModule } from './lib/vector-store.module';
 import { AvatarModule } from './modules/avatar/avatar.module';
 import { ResponseSynthesisModule } from './lib/response-synthesis.module';
+import { SearchModule } from './modules/search/search.module';
 
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // WEBSOCKET MODULE CONFIGURATION - DO NOT MODIFY
@@ -38,11 +39,12 @@ import { ResponseSynthesisModule } from './lib/response-synthesis.module';
     VectorStoreModule,
     AvatarModule,
     ResponseSynthesisModule,
+    SearchModule
   ],
   controllers: [AppController, DataController, AiController],
   providers: [
     AppService,
-    AiService,
+    AiService
   ],
 })
 export class AppModule {}

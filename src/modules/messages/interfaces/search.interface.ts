@@ -5,6 +5,7 @@ export interface SearchOptions {
   cursor?: string;  // Base64 encoded cursor
   minScore?: number;
   searchType?: 'semantic' | 'text';  // Type of search to perform
+  fromUserId?: string;  // For filtering messages from a specific user
 }
 
 export interface PageInfo {

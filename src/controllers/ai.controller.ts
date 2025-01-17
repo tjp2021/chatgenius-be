@@ -9,8 +9,6 @@ import {
   CreateAvatarRequestDto,
   AvatarAnalysisDto,
   GenerateAvatarResponseDto,
-  SearchMessagesRequestDto,
-  SearchMessagesResponseDto
 } from './dto/ai.dto';
 import { AvatarAnalysis } from '../interfaces/avatar.interface';
 import { ClerkAuthGuard } from '../guards/clerk-auth.guard';
@@ -95,17 +93,5 @@ export class AiController {
   @HttpCode(200)
   async updateAvatar(@Body() body: { userId: string }): Promise<AvatarAnalysisDto> {
     return this.aiService.updateUserAvatar(body.userId);
-  }
-
-  @Post('messages/search')
-  @HttpCode(200)
-  async searchMessages(
-    @Body() body: SearchMessagesRequestDto
-  ): Promise<SearchMessagesResponseDto[]> {
-    return this.aiService.searchMessages(body.query, {
-      userId: body.userId,
-      channelId: body.channelId,
-      limit: body.limit
-    });
   }
 } 

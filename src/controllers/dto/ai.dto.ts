@@ -1,4 +1,5 @@
 import { IsString, IsNotEmpty, IsOptional, IsNumber } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class AiTestRequestDto {
   channelId: string;
@@ -79,37 +80,8 @@ export class AvatarAnalysisDto {
 }
 
 export class GenerateAvatarResponseDto {
-  @IsString()
-  @IsNotEmpty()
-  userId: string;
-
-  @IsString()
-  @IsNotEmpty()
-  prompt: string;
-}
-
-export class SearchMessagesRequestDto {
-  @IsString()
-  @IsNotEmpty()
-  query: string;
-
-  @IsString()
-  @IsOptional()
-  userId?: string;
-
-  @IsString()
-  @IsOptional()
-  channelId?: string;
-
-  @IsNumber()
-  @IsOptional()
-  limit?: number;
-}
-
-export class SearchMessagesResponseDto {
-  id: string;
-  content: string;
-  userId: string;
-  channelId: string;
-  createdAt: Date;
+  @ApiProperty({
+    description: 'The generated avatar URL',
+  })
+  avatarUrl: string;
 } 
