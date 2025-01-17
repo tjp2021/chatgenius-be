@@ -52,8 +52,30 @@ describe('VectorStoreService', () => {
 
       // Mock chunking service to return two chunks
       const mockChunks = [
-        { content: 'chunk1', metadata: { ...metadata, messageId, chunkIndex: 0, totalChunks: 2 } },
-        { content: 'chunk2', metadata: { ...metadata, messageId, chunkIndex: 1, totalChunks: 2 } }
+        {
+          content: 'Test content 1',
+          metadata: {
+            messageId: 'msg1',
+            chunkIndex: 0,
+            totalChunks: 2,
+            channelId: 'channel1',
+            userId: 'user1',
+            timestamp: new Date().toISOString(),
+            content: 'Test content 1'
+          }
+        },
+        {
+          content: 'Test content 2',
+          metadata: {
+            messageId: 'msg1',
+            chunkIndex: 1,
+            totalChunks: 2,
+            channelId: 'channel1',
+            userId: 'user1',
+            timestamp: new Date().toISOString(),
+            content: 'Test content 2'
+          }
+        }
       ];
       jest.spyOn(textChunkingService, 'chunkText').mockReturnValue(mockChunks);
 
@@ -584,8 +606,60 @@ describe('VectorStoreService', () => {
   });
 
   describe('storeMessageBatch', () => {
-    it('should store multiple messages in batch successfully', async () => {
-      const messages = [
+    it('should store multiple messages in batches', async () => {
+      const mockChunks = [
+        {
+          content: 'Test content 1',
+          metadata: {
+            messageId: 'msg1',
+            chunkIndex: 0,
+            totalChunks: 2,
+            channelId: 'channel1',
+            userId: 'user1',
+            timestamp: new Date().toISOString(),
+            content: 'Test content 1'
+          }
+        },
+        {
+          content: 'Test content 2',
+          metadata: {
+            messageId: 'msg1',
+            chunkIndex: 1,
+            totalChunks: 2,
+            channelId: 'channel1',
+            userId: 'user1',
+            timestamp: new Date().toISOString(),
+            content: 'Test content 2'
+          }
+        }
+      ];
+
+      // Update other mock chunks
+      const mockChunk = {
+        content: 'Test content',
+        metadata: {
+          messageId: 'msg1',
+          chunkIndex: 0,
+          totalChunks: 1,
+          channelId: 'channel1',
+          userId: 'user1',
+          timestamp: new Date().toISOString(),
+          content: 'Test content'
+        }
+      };
+
+      jest.spyOn(textChunkingService, 'chunkText')
+        .mockReturnValue([mockChunk])
+        .mockReturnValueOnce([mockChunk]);
+
+      // Mock embedding service
+      const mockEmbedding = [0.1, 0.2, 0.3];
+      jest.spyOn(embeddingService, 'createEmbedding').mockResolvedValue(mockEmbedding);
+
+      // Mock pinecone service
+      jest.spyOn(pineconeService, 'upsertVectors').mockResolvedValue();
+
+      const results = await service.storeMessageBatch([
         {
           id: 'msg1',
           content: 'Test message 1',
@@ -604,24 +678,7 @@ describe('VectorStoreService', () => {
             timestamp: new Date().toISOString()
           }
         }
-      ];
-
-      // Mock chunking service
-      const mockChunks = messages.map(msg => ({
-        content: msg.content,
-        metadata: { ...msg.metadata, messageId: msg.id, chunkIndex: 0, totalChunks: 1 }
-      }));
-      jest.spyOn(textChunkingService, 'chunkText').mockReturnValue([mockChunks[0]]);
-      jest.spyOn(textChunkingService, 'chunkText').mockReturnValueOnce([mockChunks[1]]);
-
-      // Mock embedding service
-      const mockEmbedding = [0.1, 0.2, 0.3];
-      jest.spyOn(embeddingService, 'createEmbedding').mockResolvedValue(mockEmbedding);
-
-      // Mock pinecone service
-      jest.spyOn(pineconeService, 'upsertVectors').mockResolvedValue();
-
-      const results = await service.storeMessageBatch(messages);
+      ]);
       
       expect(results).toHaveLength(2);
       expect(results[0].messageId).toBe('msg1');

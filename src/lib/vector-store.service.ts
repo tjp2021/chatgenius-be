@@ -88,7 +88,10 @@ export class VectorStoreService {
     await this.pinecone.upsertVector(
       `${chunk.metadata.messageId}_chunk_${chunk.metadata.chunkIndex}`,
       vector,
-      chunk.metadata
+      {
+        ...chunk.metadata,
+        content: chunk.content
+      }
     );
   }
 
@@ -102,7 +105,10 @@ export class VectorStoreService {
     const vectors: Vector[] = chunks.map((chunk, i) => ({
       id: `${chunk.metadata.messageId}_chunk_${chunk.metadata.chunkIndex}`,
       values: embeddings[i],
-      metadata: chunk.metadata
+      metadata: {
+        ...chunk.metadata,
+        content: chunk.content
+      }
     }));
 
     // Store batch in Pinecone
@@ -128,6 +134,7 @@ export class VectorStoreService {
           messageId: msg.id,
           chunks: this.textChunking.chunkText(msg.content, {
             messageId: msg.id,
+            content: msg.content,
             ...msg.metadata
           })
         }))
@@ -198,8 +205,11 @@ export class VectorStoreService {
   async findSimilarMessages(content: string, options: SearchOptions = {}) {
     const { channelId, channelIds, topK = 5, minScore = this.DEFAULT_MIN_SCORE } = options;
     
+    // Extract actual query from /text command if present
+    const actualQuery = content.startsWith('/text ') ? content.substring(6) : content;
+    
     // 1. Create embedding for search query
-    const vector = await this.embedding.createEmbedding(content);
+    const vector = await this.embedding.createEmbedding(actualQuery);
     
     // 2. Prepare filter for channel-aware search
     const filter: QueryOptions['filter'] = channelId ? 

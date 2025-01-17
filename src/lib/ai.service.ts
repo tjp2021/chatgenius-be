@@ -220,10 +220,57 @@ Generate a response that matches these exact style characteristics. The response
   }
 
   async synthesizeResponse(channelId: string, prompt: string) {
-    return {
-      response: 'Mocked response',
-      contextMessageCount: 0
-    };
+    try {
+      // Get relevant messages from vector store
+      const similarMessages = await this.vectorStore.findSimilarMessages(prompt, {
+        topK: 5,
+        minScore: 0.7
+      });
+
+      if (similarMessages.length === 0) {
+        return {
+          response: "I couldn't find any relevant context to answer your question.",
+          contextMessageCount: 0
+        };
+      }
+
+      // Format messages for context
+      const contextMessages = similarMessages
+        .map(msg => `[${msg.metadata?.timestamp || 'unknown'}] ${msg.content}`)
+        .join('\n');
+
+      // Generate response using OpenAI
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4-1106-preview',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant. Use the provided context to answer questions specifically based on the information available. If the context contains specific information about our system or processes, use that information in your response.'
+          },
+          {
+            role: 'user',
+            content: `Based on the following context from our system, answer this question:
+
+Context:
+${contextMessages}
+
+Question: ${prompt}
+
+Please provide a specific answer based on the context provided. If the context contains specific information about our system or processes, use that information in your response.`
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 500
+      });
+
+      return {
+        response: completion.choices[0].message?.content || 'No response generated',
+        contextMessageCount: similarMessages.length
+      };
+    } catch (error) {
+      this.logger.error('Error generating response:', error);
+      throw error;
+    }
   }
 
   async analyzeChannelConversations(channelId: string) {

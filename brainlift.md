@@ -370,3 +370,101 @@ await clerkClient.verifyToken(token);        // Direct verification
 - Implement caching for frequent search queries
 - Optimize chunking strategy based on message patterns
 - Add search analytics to improve relevance over time 
+
+## Search Issue Analysis (Authentication & Authorization)
+
+### Initial Problem
+From `search-issue.md`, we identified a critical issue where search requests were failing despite:
+- Messages existing in the database
+- Content containing search terms
+- Messages being in correct channels
+- Users having correct permissions
+
+### Symptoms
+1. Request Flow showed userId transformation:
+```
+Input Request: userId = "test_user_1"
+SearchController Log: userId = "test_user_1"
+SearchService Log: userId = "user_001" (transformed incorrectly)
+```
+
+2. This caused:
+- Channel access checks to fail
+- Empty search results
+- Authentication issues
+
+### Investigation Steps
+1. First enhanced logging in SearchController to track request flow:
+```typescript
+console.log('🔍 [SearchController] Received request:', {
+  query: searchRequest.query,
+  channelId: searchRequest.channelId,
+  userId: searchRequest.userId,
+  authUserId: req.auth?.userId,
+  rawBody: req.body
+});
+```
+
+2. Discovered build/watch issues:
+- Changes weren't being reflected in running server
+- Required server restart and rebuild
+- Verified compiled code in `dist/` directory
+
+3. Code Review revealed:
+- SearchController was using `searchRequest.userId` from request body
+- ClerkAuthGuard was setting `req.auth.userId` to `'test_user_1'`
+- Mismatch between authenticated user and request user
+
+### Solution Implementation
+Modified SearchController to use authenticated userId:
+```typescript
+// Before
+userId: searchRequest.userId
+
+// After
+userId: req.auth.userId
+```
+
+Changed this consistently across all search methods:
+- Regular search
+- Text search
+- RAG search
+- From-user search
+
+### Verification
+1. Tested with mismatched userIds:
+```bash
+curl -X POST http://localhost:3002/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: test_token" \
+  -d '{"query": "/text kubernetes", "userId": "user_001", "channelId": "test_channel"}'
+```
+
+2. Confirmed:
+- Controller used `test_user_1` from auth
+- Search returned correct results
+- Channel access check passed
+
+### Learning Lessons
+1. **Authentication Best Practices**
+   - Never trust user input for authentication
+   - Always use authenticated user ID from auth guard
+   - Validate user permissions at service level
+
+2. **Debugging Methodology**
+   - Start with enhanced logging
+   - Verify build/compilation process
+   - Check actual vs expected values
+   - Follow the data flow through the system
+
+3. **KISS Principle Application**
+   - Fixed one issue at a time
+   - Made minimal necessary changes
+   - Tested changes immediately
+   - Verified fix thoroughly
+
+4. **Development Environment**
+   - Ensure watch mode is working
+   - Verify compiled code matches source
+   - Check server logs for issues
+   - Test with explicit test cases 

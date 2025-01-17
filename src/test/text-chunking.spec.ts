@@ -17,23 +17,27 @@ describe('TextChunkingService', () => {
   });
 
   it('should return empty array for empty text', () => {
-    const result = service.chunkText('', {
+    const testMetadata = {
       messageId: 'test-id',
       timestamp: new Date().toISOString(),
       userId: 'user-1',
-      channelId: 'channel-1'
-    });
+      channelId: 'channel-1',
+      content: ''
+    };
+    const result = service.chunkText('', testMetadata);
     expect(result).toEqual([]);
   });
 
   it('should chunk text into appropriate sizes', () => {
     const longText = 'This is a very long sentence that should be split. '.repeat(20);
-    const result = service.chunkText(longText, {
+    const testMetadata = {
       messageId: 'test-id',
       timestamp: new Date().toISOString(),
       userId: 'user-1',
-      channelId: 'channel-1'
-    });
+      channelId: 'channel-1',
+      content: ''
+    };
+    const result = service.chunkText(longText, testMetadata);
 
     expect(result.length).toBeGreaterThan(1);
     result.forEach((chunk, index) => {
@@ -45,12 +49,14 @@ describe('TextChunkingService', () => {
 
   it('should preserve sentence boundaries when possible', () => {
     const text = 'First sentence. Second sentence. Third sentence.';
-    const result = service.chunkText(text, {
+    const testMetadata = {
       messageId: 'test-id',
       timestamp: new Date().toISOString(),
       userId: 'user-1',
-      channelId: 'channel-1'
-    });
+      channelId: 'channel-1',
+      content: ''
+    };
+    const result = service.chunkText(text, testMetadata);
 
     expect(result.length).toBe(1);
     expect(result[0].content).toBe(text);
@@ -58,12 +64,14 @@ describe('TextChunkingService', () => {
 
   it('should reconstruct original text', () => {
     const originalText = 'First sentence. Second sentence. Third sentence.';
-    const chunks = service.chunkText(originalText, {
+    const testMetadata = {
       messageId: 'test-id',
       timestamp: new Date().toISOString(),
       userId: 'user-1',
-      channelId: 'channel-1'
-    });
+      channelId: 'channel-1',
+      content: ''
+    };
+    const chunks = service.chunkText(originalText, testMetadata);
 
     const reconstructed = service.reconstructText(chunks);
     expect(reconstructed.trim()).toBe(originalText);
@@ -73,12 +81,14 @@ describe('TextChunkingService', () => {
     // Create a sentence longer than TARGET_CHUNK_SIZE (512)
     const longWord = 'supercalifragilisticexpialidocious'; // 34 chars
     const longSentence = (longWord + ' ').repeat(20); // ~700 chars
-    const result = service.chunkText(longSentence, {
+    const testMetadata = {
       messageId: 'test-id',
       timestamp: new Date().toISOString(),
       userId: 'user-1',
-      channelId: 'channel-1'
-    });
+      channelId: 'channel-1',
+      content: ''
+    };
+    const result = service.chunkText(longSentence, testMetadata);
 
     expect(result.length).toBeGreaterThan(1);
     result.forEach(chunk => {

@@ -12,14 +12,14 @@ async function testPineconeCRUD() {
     });
 
     // Use the correct index name we discovered
-    const indexName = 'rag-chatgenius';
+    const indexName = 'chatgenius-1536';
     console.log(`Using index: ${indexName}`);
     const index = pinecone.index(indexName);
 
     // Test vector
     const testVector = {
       id: 'test-vector-1',
-      values: Array(3072).fill(0).map(() => Math.random()), // Random 3072-dim vector
+      values: Array(1536).fill(0).map(() => Math.random()), // Random 1536-dim vector
       metadata: {
         text: 'This is a test message',
         timestamp: new Date().toISOString(),

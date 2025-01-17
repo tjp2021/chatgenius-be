@@ -19,6 +19,8 @@ async function createUsers() {
       { id: 'user_002', name: 'Paul' },
       { id: 'user_003', name: 'Stringer' },
       { id: 'user_004', name: 'Marlo' },
+      { id: 'test_user_1', name: 'Test User 1' },
+      { id: 'test_user_2', name: 'Test User 2' }
     ],
   });
   console.log('Users created');
@@ -31,6 +33,7 @@ async function createChannels() {
       { id: 'channel_001', name: 'basketball', createdById: 'user_001' },
       { id: 'channel_002', name: 'rap', createdById: 'user_002' },
       { id: 'channel_003', name: 'boxing', createdById: 'user_003' },
+      { id: 'test_channel', name: 'Test Channel', createdById: 'test_user_1' }
     ],
   });
   console.log('Channels created');
@@ -39,10 +42,16 @@ async function createChannels() {
 
 async function associateMembers() {
   // Add all users to all channels
-  const users = ['user_001', 'user_002', 'user_003', 'user_004'];
-  const channels = ['channel_001', 'channel_002', 'channel_003'];
+  const users = ['user_001', 'user_002', 'user_003', 'user_004', 'test_user_1', 'test_user_2'];
+  const channels = ['channel_001', 'channel_002', 'channel_003', 'test_channel'];
   
-  const membershipData = [];
+  type MembershipData = {
+    userId: string;
+    channelId: string;
+    role: 'OWNER' | 'MEMBER';
+  };
+
+  const membershipData: MembershipData[] = [];
   for (const userId of users) {
     for (const channelId of channels) {
       membershipData.push({
@@ -54,9 +63,17 @@ async function associateMembers() {
   }
 
   // Set channel creators as OWNER
-  membershipData.find(m => m.userId === 'user_001' && m.channelId === 'channel_001').role = 'OWNER';
-  membershipData.find(m => m.userId === 'user_002' && m.channelId === 'channel_002').role = 'OWNER';
-  membershipData.find(m => m.userId === 'user_003' && m.channelId === 'channel_003').role = 'OWNER';
+  const setOwner = (userId: string, channelId: string) => {
+    const membership = membershipData.find(m => m.userId === userId && m.channelId === channelId);
+    if (membership) {
+      membership.role = 'OWNER';
+    }
+  };
+
+  setOwner('user_001', 'channel_001');
+  setOwner('user_002', 'channel_002');
+  setOwner('user_003', 'channel_003');
+  setOwner('test_user_1', 'test_channel');
 
   await prisma.channelMember.createMany({
     data: membershipData,
@@ -137,7 +154,34 @@ async function createMessages() {
     { userId: 'user_001', channelId: 'channel_002', content: "Biggie's flow was smooth as butter." },
     { userId: 'user_001', channelId: 'channel_003', content: "Canelo's technique is flawless." },
     { userId: 'user_001', channelId: 'channel_003', content: "Fury's comeback story is inspiring." },
-    { userId: 'user_001', channelId: 'channel_003', content: "The sweet science is all about strategy." }
+    { userId: 'user_001', channelId: 'channel_003', content: "The sweet science is all about strategy." },
+
+    // Add DevOps/Kubernetes messages
+    { userId: 'test_user_1', channelId: 'test_channel', content: "Our deployment process uses Docker containers orchestrated with Kubernetes. The pipeline goes through dev, staging, and prod environments." },
+    { userId: 'test_user_2', channelId: 'test_channel', content: "For local development, you can use minikube. First, install it using brew install minikube, then start it with minikube start." },
+    { userId: 'test_user_1', channelId: 'test_channel', content: "We use GitHub Actions for CI/CD. Every PR triggers tests and builds a new container image." },
+    { userId: 'test_user_2', channelId: 'test_channel', content: "I'm getting a 503 error in production after the latest deployment. Any ideas?" },
+    { userId: 'test_user_1', channelId: 'test_channel', content: "Check the pod logs. Might be a memory issue. Run kubectl logs <pod-name> to investigate." },
+    { userId: 'test_user_2', channelId: 'test_channel', content: "Found the issue - one of our services was OOMKilled. We need to increase the memory limit in the deployment yaml." },
+    { userId: 'test_user_1', channelId: 'test_channel', content: "We should add rate limiting to our API endpoints. Getting too many requests in prod." },
+    { userId: 'test_user_2', channelId: 'test_channel', content: "Good idea. We can use Redis for rate limiting. Here's a simple implementation using the rate-limiter-flexible package: [code example]" },
+    { userId: 'test_user_1', channelId: 'test_channel', content: "Let's also add retry logic with exponential backoff for failed requests." },
+
+    // Add help/documentation messages
+    { userId: 'test_user_1', channelId: 'test_channel', content: "To reset your password, go to Settings > Security and click on 'Reset Password'. Follow the email instructions." },
+    { userId: 'test_user_2', channelId: 'test_channel', content: "Channel permissions can be managed by admins and moderators. Go to Channel Settings > Permissions to modify roles." },
+    { userId: 'test_user_1', channelId: 'test_channel', content: "To create a new thread, click the '+' button in any channel and select 'New Thread'. Add a title and description." },
+    { userId: 'test_user_2', channelId: 'test_channel', content: "For enhanced security, we recommend enabling two-factor authentication in your account settings." },
+    { userId: 'test_user_1', channelId: 'test_channel', content: "You can customize your notification settings per channel by clicking the channel settings gear icon." },
+
+    // Add Drake facts and opinions
+    { userId: 'test_user_1', channelId: 'channel_002', content: "Views was released on April 29, 2016 and debuted at number one on the Billboard 200." },
+    { userId: 'test_user_2', channelId: 'channel_002', content: "Scorpion broke streaming records with over 1 billion streams in its first week of release." },
+    { userId: 'test_user_1', channelId: 'channel_002', content: "Drake has won 4 Grammy Awards from 47 nominations throughout his career." },
+    { userId: 'test_user_2', channelId: 'channel_002', content: "Drake became the first artist to surpass 50 billion streams on Spotify in 2021." },
+    { userId: 'test_user_1', channelId: 'channel_002', content: "Drake holds the record for most Billboard Hot 100 entries ever with over 250 songs charting." },
+    { userId: 'test_user_2', channelId: 'channel_002', content: "Drake revolutionized hip-hop by seamlessly switching between melodic singing and technical rapping." },
+    { userId: 'test_user_1', channelId: 'channel_002', content: "Drake changed rap by making emotional vulnerability and personal relationships central themes." }
   ];
 
   // Create all messages with their relationships

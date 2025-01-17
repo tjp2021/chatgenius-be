@@ -55,6 +55,7 @@ export class FilesService implements FileRepository {
               timestamp: new Date().toISOString(),
               userId: userId!,
               channelId: 'file-content', // Special channel ID for file content
+              content: textContent  // Add content field
             });
 
             // Store chunks in vector DB

@@ -7,11 +7,12 @@ interface ChunkMetadata {
   timestamp: string;
   userId: string;
   channelId: string;
+  content?: string;
 }
 
 export interface TextChunk {
   content: string;
-  metadata: ChunkMetadata;
+  metadata: ChunkMetadata & { content: string };
 }
 
 @Injectable()
@@ -20,11 +21,13 @@ export class TextChunkingService {
   private readonly MIN_CHUNK_SIZE = 100;
   private readonly DEFAULT_OVERLAP = 50;
 
-  private createChunk(content: string, metadata: Omit<ChunkMetadata, 'chunkIndex' | 'totalChunks'>, index: number): TextChunk {
+  private createChunk(content: string, metadata: Omit<ChunkMetadata, 'chunkIndex' | 'totalChunks' | 'content'>, index: number): TextChunk {
+    const trimmedContent = content.trim();
     return {
-      content: content.trim(),
+      content: trimmedContent,
       metadata: {
         ...metadata,
+        content: trimmedContent,
         chunkIndex: index,
         totalChunks: 0 // Placeholder, updated after all chunks created
       }

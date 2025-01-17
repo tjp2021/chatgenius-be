@@ -1,8 +1,12 @@
 import { Test } from '@nestjs/testing';
 import { ConfigModule } from '@nestjs/config';
-import { SearchService } from './lib/search.service';
+import { SearchService } from './modules/search/services/search.service';
 import { OpenAIService } from './lib/openai.service';
 import { PineconeService } from './lib/pinecone.service';
+import { MessagesService } from './modules/messages/services/messages.service';
+import { PrismaService } from './lib/prisma.service';
+import { VectorStoreService } from './lib/vector-store.service';
+import { ResponseSynthesisService } from './lib/response-synthesis.service';
 
 async function main() {
   console.log('🧪 Starting Search Service Tests');
@@ -10,7 +14,15 @@ async function main() {
   // Create test module
   const moduleRef = await Test.createTestingModule({
     imports: [ConfigModule.forRoot()],
-    providers: [SearchService, OpenAIService, PineconeService],
+    providers: [
+      SearchService,
+      OpenAIService,
+      PineconeService,
+      MessagesService,
+      PrismaService,
+      VectorStoreService,
+      ResponseSynthesisService
+    ],
   }).compile();
 
   // Get service instances
@@ -64,55 +76,8 @@ async function main() {
         channel: data.channel
       });
     }
-    console.log('✅ Test data setup complete');
-
-    // Test 1: Basic search (MVP feature)
-    console.log('\n2️⃣ Testing basic search...');
-    const basicResults = await searchService.search('When did Views come out?');
-    console.log('Basic search results:');
-    basicResults.items.forEach((result, i) => {
-      console.log(`${i + 1}. [${result.score.toFixed(3)}] ${result.content}`);
-    });
-    console.log('✅ Basic search test complete');
-
-    // Test 2: User-specific search (Avatar feature)
-    console.log('\n3️⃣ Testing user-specific search...');
-    const userResults = await searchService.search('Views album', { userId: 'user1' });
-    console.log('User-specific search results:');
-    userResults.items.forEach((result, i) => {
-      console.log(`${i + 1}. [${result.score.toFixed(3)}] ${result.content}`);
-      console.log(`   User: ${result.metadata?.userId}`);
-      console.log(`   Context: ${JSON.stringify(result.metadata?.context)}`);
-    });
-    console.log('✅ User-specific search test complete');
-
-    // Test 3: Metadata verification
-    console.log('\n4️⃣ Testing metadata completeness...');
-    const metadataTest = await searchService.search('Grammy');
-    const testResult = metadataTest[0];
-    const hasAllMetadata = testResult.metadata?.userId 
-      && testResult.metadata?.timestamp 
-      && testResult.metadata?.context?.threadId
-      && typeof testResult.metadata?.context?.isReply === 'boolean'
-      && testResult.metadata?.context?.channel;
-    
-    console.log('Metadata test result:', {
-      hasAllMetadata,
-      metadata: testResult.metadata
-    });
-    console.log('✅ Metadata test complete');
-
-    // Test 4: Score threshold
-    console.log('\n5️⃣ Testing score threshold...');
-    const thresholdTest = await searchService.search('completely unrelated query');
-    console.log(`Results below threshold (${thresholdTest.items.length} expected): ${thresholdTest.items.length}`);
-    console.log('✅ Score threshold test complete');
-
-    console.log('\n✅ All tests completed successfully!');
-
   } catch (error) {
-    console.error('❌ Test failed:', error);
-    process.exit(1);
+    console.error('Error:', error);
   }
 }
 

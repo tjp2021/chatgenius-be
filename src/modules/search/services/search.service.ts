@@ -1,112 +1,94 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { MessagesService } from '../../messages/services/messages.service';
 import { ResponseSynthesisService } from '../../../lib/response-synthesis.service';
 
-interface SearchResult {
-  items: any[];
-  pageInfo: {
-    hasNextPage: boolean;
-  };
-  total: number;
-}
-
 export interface SearchOptions {
-  userId?: string;
+  userId: string;
   limit?: number;
-  minScore?: number;
-  searchType?: 'semantic' | 'text';
   cursor?: string;
+  minScore?: number;
   fromUserId?: string;
+  channelId?: string;
+  searchType?: 'semantic' | 'text';
 }
 
 @Injectable()
 export class SearchService {
-  private readonly logger = new Logger(SearchService.name);
-
   constructor(
     private readonly messagesService: MessagesService,
-    private readonly synthesis: ResponseSynthesisService,
+    private readonly responseSynthesisService: ResponseSynthesisService,
   ) {}
 
-  private formatContextMessages(messages: any[]): string {
-    if (!messages.length) return '';
-
-    return messages
-      .map(msg => `[${msg.createdAt.toISOString()}] ${msg.content}`)
-      .join('\n');
-  }
-
-  async search(query: string, options: SearchOptions = {}): Promise<SearchResult> {
-    this.logger.log(`Searching for query: ${query} with options:`, options);
-    
-    const { userId, limit = 10, minScore = 0.5, searchType = 'semantic', fromUserId } = options;
-    
-    return this.messagesService.searchMessages(userId || 'test-user-123', query, {
-      limit,
-      minScore,
-      searchType,
-      fromUserId
+  async search(query: string, options: SearchOptions) {
+    console.log('🔍 [SearchService] Starting search with options:', {
+      query,
+      options,
+      searchType: options.searchType || 'semantic'
     });
+
+    const messages = await this.messagesService.searchMessages(
+      options.userId,
+      query,
+      {
+        limit: options.limit,
+        cursor: options.cursor,
+        minScore: options.minScore,
+        fromUserId: options.fromUserId,
+        channelId: options.channelId,
+        searchType: options.searchType || 'semantic'
+      }
+    );
+
+    console.log('🔍 [SearchService] Search results:', {
+      total: messages.total,
+      hasItems: messages.items?.length > 0,
+      firstItemScore: messages.items?.[0]?.score,
+      firstItemContent: messages.items?.[0]?.content?.substring(0, 100)
+    });
+
+    return messages;
   }
 
   async generateRagResponse(userId: string, query: string): Promise<string> {
-    this.logger.log(`Generating RAG response for query: ${query}`);
-    
+    console.log('🔍 [SearchService] Generating RAG response:', {
+      userId,
+      query
+    });
+
     // Get relevant messages
-    const searchResults = await this.messagesService.searchMessages(userId, query, {
+    const messages = await this.messagesService.searchMessages(userId, query, {
       limit: 5,
-      minScore: 0.7,
+      minScore: 0.5,
       searchType: 'semantic'
     });
 
-    // Format messages for context
-    const contextMessages = this.formatContextMessages(searchResults.items);
-
-    // Generate response using context
-    const response = await this.synthesis.synthesizeResponse({
-      channelId: 'rag-response', // Virtual channel for RAG responses
-      prompt: contextMessages ? 
-        `Based on the following context, answer this question:\n\nContext:\n${contextMessages}\n\nQuestion: ${query}` :
-        `Answer this question without context: ${query}`,
+    console.log('🔍 [SearchService] RAG search results:', {
+      total: messages.total,
+      hasItems: messages.items?.length > 0,
+      scores: messages.items?.map(m => m.score)
     });
 
-    return response.response;
-  }
-
-  async getThreadMessages(messageId: string, userId: string): Promise<{ messages: any[] }> {
-    this.logger.log(`Getting thread messages for messageId: ${messageId}`);
-    return this.messagesService.getThreadMessages(messageId, userId);
-  }
-
-  async generateSummary(userId: string, query: string): Promise<{ summary: string; context: any[] }> {
-    this.logger.log(`Generating summary for query: ${query}`);
-    
-    // Get relevant messages
-    const searchResults = await this.messagesService.searchMessages(userId, query, {
-      limit: 10,
-      minScore: 0.6,
-      searchType: 'semantic'
-    });
-
-    if (searchResults.items.length === 0) {
-      return {
-        summary: "No relevant messages found to summarize.",
-        context: []
-      };
+    if (!messages.items?.length) {
+      console.log('⚠️ [SearchService] No relevant messages found for RAG');
+      return 'I could not find any relevant context to answer your question.';
     }
 
-    // Format messages for context
-    const contextMessages = this.formatContextMessages(searchResults.items);
-
-    // Generate summary using context
-    const response = await this.synthesis.synthesizeResponse({
-      channelId: 'summary-response',
-      prompt: `Generate a concise summary of these messages:\n\n${contextMessages}`,
+    console.log('🔍 [SearchService] Found relevant messages:', {
+      count: messages.items.length
     });
 
-    return {
-      summary: response.response,
-      context: searchResults.items
-    };
+    // Format context messages
+    const context = messages.items.map(msg => {
+      return `${msg.user.name}: ${msg.content}`;
+    }).join('\n\n');
+
+    // Synthesize response
+    const response = await this.responseSynthesisService.synthesizeResponse({
+      channelId: 'rag-response',
+      prompt: `Based on the following context, answer this question:\n\nContext:\n${context}\n\nQuestion: ${query}`
+    });
+    
+    console.log('🔍 [SearchService] Generated RAG response');
+    return response.response;
   }
 } 

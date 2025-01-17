@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../lib/prisma.service';
 import { VectorStoreService } from '../../../lib/vector-store.service';
 import { CreateMessageDto } from '../dto/create-message.dto';
@@ -457,8 +457,16 @@ export class MessagesService {
       limit = 20,
       cursor,
       minScore = 0.5,
-      searchType = 'semantic'
+      searchType = 'semantic',
+      channelId
     } = options;
+
+    console.log('🔍 [DEBUG] Starting search with:', {
+      userId,
+      query,
+      channelId,
+      searchType
+    });
 
     // Get all channels the user has access to
     const memberships = await this.prisma.channelMember.findMany({
@@ -466,27 +474,49 @@ export class MessagesService {
       select: { channelId: true }
     });
 
-    const channelIds = memberships.map(m => m.channelId);
+    console.log('🔍 [DEBUG] Channel memberships:', {
+      userId,
+      memberships: JSON.stringify(memberships)
+    });
 
-    // If user has no channel access, return empty results
+    const channelIds = channelId ? [channelId] : memberships.map(m => m.channelId);
+    
+    console.log('🔍 [DEBUG] Will search in channels:', channelIds);
+
     if (channelIds.length === 0) {
-      return {
-        items: [],
-        pageInfo: { hasNextPage: false },
-        total: 0
-      };
+      console.log('⚠️ [DEBUG] User has no channel access:', userId);
+      return { items: [], pageInfo: { hasNextPage: false }, total: 0 };
     }
 
-    // For text-based search, use database query
     if (searchType === 'text') {
+      console.log('🔍 [DEBUG] Performing text search:', {
+        query,
+        channels: channelIds.join(', ')
+      });
+
+      // First verify all messages in the channels
+      const allMessages = await this.prisma.message.findMany({
+        where: { channelId: { in: channelIds } },
+        select: { id: true, content: true, channelId: true }
+      });
+      
+      console.log('🔍 [DEBUG] Found messages:', {
+        total: allMessages.length,
+        sample: JSON.stringify(allMessages.slice(0, 2))
+      });
+
+      const where = {
+        channelId: { in: channelIds },
+        content: {
+          contains: query,
+          mode: 'insensitive' as const
+        }
+      };
+
+      console.log('🔍 [DEBUG] Search where clause:', JSON.stringify(where));
+
       const messages = await this.prisma.message.findMany({
-        where: {
-          channelId: { in: channelIds },
-          content: {
-            contains: query,
-            mode: 'insensitive'
-          }
-        },
+        where,
         take: limit,
         ...(cursor && {
           cursor: { id: cursor },
@@ -515,20 +545,19 @@ export class MessagesService {
         }
       });
 
-      const total = await this.prisma.message.count({
-        where: {
-          channelId: { in: channelIds },
-          content: {
-            contains: query,
-            mode: 'insensitive'
-          }
-        }
+      const total = await this.prisma.message.count({ where });
+      
+      console.log('🔍 [DEBUG] Search results:', {
+        matches: messages.length,
+        total,
+        firstMatch: messages[0] ? JSON.stringify(messages[0]) : 'none'
       });
 
       return {
         items: messages.map(msg => ({
           ...msg,
           score: 1, // Text matches get full score
+          user: msg.user,
           replyTo: msg.replyTo ?? undefined
         })),
         pageInfo: {
@@ -551,6 +580,16 @@ export class MessagesService {
     }
 
     // Search for similar messages in accessible channels
+    console.log('🔍 [DEBUG] Calling vectorStoreService.findSimilarMessages with:', {
+      query,
+      channelIds,
+      cursorData: cursorData ? {
+        id: cursorData.id,
+        score: cursorData.score,
+        timestamp: cursorData.timestamp
+      } : undefined
+    });
+
     const vectorResults = await this.vectorStoreService.findSimilarMessages(query, {
       channelIds,
       ...(cursorData && {
@@ -560,6 +599,15 @@ export class MessagesService {
           timestamp: cursorData.timestamp
         }
       })
+    });
+
+    console.log('🔍 [DEBUG] Vector search results:', {
+      resultsCount: vectorResults?.length,
+      firstResult: vectorResults?.[0] ? {
+        id: vectorResults[0].id,
+        score: vectorResults[0].score,
+        metadata: vectorResults[0].metadata
+      } : null
     });
 
     // Filter by minimum score
@@ -611,6 +659,12 @@ export class MessagesService {
           },
         },
       }
+    });
+
+    console.log('🔍 [DEBUG] Messages found in database:', {
+      count: messages.length,
+      ids: messages.map(m => m.id),
+      vectorIds: availablePageResults.map(r => r.id)
     });
 
     // If no messages found, return empty result

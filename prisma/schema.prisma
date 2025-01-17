@@ -1,14 +1,178 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                  String              @id
+  email               String?
+  name                String?
+  imageUrl            String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  isOnline            Boolean             @default(false)
+  lastSeen            DateTime            @default(now())
+  drafts              ChannelDraft[]
+  receivedInvitations ChannelInvitation[] @relation("ReceivedInvitations")
+  sentInvitations     ChannelInvitation[] @relation("SentInvitations")
+  channelMembers      ChannelMember[]
+  navigationHistory   ChannelNavigation[]
+  channels            Channel[]           @relation("CreatedChannels")
+  files               File[]
+  messages            Message[]
+  reactions           Reaction[]
+  readReceipts        ReadReceipt[]
+
+  @@map("users")
+}
+
+model Channel {
+  id                String              @id @default(uuid())
+  name              String
+  description       String?
+  type              ChannelType         @default(PUBLIC)
+  createdById       String
+  createdAt         DateTime            @default(now())
+  lastActivityAt    DateTime            @default(now()) @map("last_activity_at")
+  memberCount       Int                 @default(0) @map("member_count")
+  updatedAt         DateTime            @updatedAt
+  drafts            ChannelDraft[]
+  invitations       ChannelInvitation[]
+  members           ChannelMember[]
+  navigationHistory ChannelNavigation[]
+  createdBy         User                @relation("CreatedChannels", fields: [createdById], references: [id])
+  messages          Message[]
+
+  @@map("channels")
+}
+
+model Message {
+  id             String                @id @default(uuid())
+  content        String
+  channelId      String
+  userId         String
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  deliveryStatus MessageDeliveryStatus @default(SENT)
+  replyToId      String?
+  vectorId       String?
+  channel        Channel               @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  replyTo        Message?              @relation("Replies", fields: [replyToId], references: [id])
+  replies        Message[]             @relation("Replies")
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions      Reaction[]
+  readReceipts   ReadReceipt[]
+
+  @@map("messages")
+}
+
+model Reaction {
+  messageId String
+  userId    String
+  type      String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId, type])
+  @@map("reactions")
+}
+
+model ChannelMember {
+  channelId   String
+  userId      String
+  role        MemberRole @default(MEMBER)
+  createdAt   DateTime   @default(now())
+  lastReadAt  DateTime   @default(now()) @map("last_read_at")
+  joinedAt    DateTime   @default(now()) @map("joined_at")
+  unreadCount Int        @default(0) @map("unread_count")
+  channel     Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, userId])
+  @@map("channel_members")
+}
+
+model ReadReceipt {
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+  @@map("read_receipts")
+}
+
+model ChannelDraft {
+  id        String   @id @default(uuid())
+  userId    String
+  channelId String
+  content   String
+  updatedAt DateTime @updatedAt
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@map("channel_drafts")
+}
+
+model ChannelInvitation {
+  id        String   @id @default(uuid())
+  channelId String
+  inviterId String
+  createdAt DateTime @default(now())
+  inviteeId String
+  updatedAt DateTime @updatedAt
+  status    String   @default("PENDING")
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  invitee   User     @relation("ReceivedInvitations", fields: [inviteeId], references: [id], onDelete: Cascade)
+  inviter   User     @relation("SentInvitations", fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, inviterId, inviteeId])
+  @@map("channel_invitations")
+}
+
+model ChannelNavigation {
+  id        String   @id @default(uuid())
+  userId    String
+  channelId String
+  viewedAt  DateTime @default(now())
+  order     Int
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+  @@map("channel_navigation")
+}
+
+model File {
+  id          String   @id @default(uuid())
+  name        String
+  type        String
+  size        Int
+  url         String
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  textContent String?
+  vectorIds   String[]
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("files")
+}
+
+model UserAvatar {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  analysis  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum UserRole {
@@ -32,195 +196,6 @@ enum MessageDeliveryStatus {
   SENDING
   SENT
   DELIVERED
-  READ
   FAILED
-}
-
-model User {
-  id         String    @id
-  email      String?
-  name       String?
-  imageUrl   String?
-  isOnline   Boolean   @default(false)
-  lastSeen   DateTime  @default(now())
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  // Relations
-  channels        Channel[]       @relation("CreatedChannels")
-  channelMembers  ChannelMember[]
-  messages        Message[]
-  navigationHistory ChannelNavigation[]
-  drafts         ChannelDraft[]
-  reactions      Reaction[]
-  readReceipts   ReadReceipt[]
-  receivedInvitations ChannelInvitation[] @relation("ReceivedInvitations")
-  sentInvitations     ChannelInvitation[] @relation("SentInvitations")
-  files          File[]
-
-  @@map("users")
-}
-
-model Channel {
-  id          String    @id @default(uuid())
-  name        String
-  description String?
-  type        ChannelType @default(PUBLIC)
-  createdById String
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  lastActivityAt DateTime @default(now()) @map("last_activity_at")
-  memberCount  Int      @default(0) @map("member_count")
-
-  // Relations
-  createdBy      User            @relation("CreatedChannels", fields: [createdById], references: [id])
-  members        ChannelMember[]
-  messages       Message[]
-  navigationHistory ChannelNavigation[]
-  drafts         ChannelDraft[]
-  invitations    ChannelInvitation[]
-
-  @@map("channels")
-}
-
-model Message {
-  id            String    @id @default(uuid())
-  content       String
-  channelId     String
-  userId        String
-  replyToId     String?
-  vectorId      String?   // Vector ID for semantic search
-  deliveryStatus MessageDeliveryStatus @default(SENT)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // Relations
-  channel       Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  replyTo       Message?  @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies       Message[] @relation("Replies")
-  reactions     Reaction[]
-  readReceipts  ReadReceipt[]
-
-  @@map("messages")
-}
-
-model Reaction {
-  messageId String
-  userId    String
-  type      String
-  createdAt DateTime @default(now())
-
-  // Relations
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([messageId, userId, type])
-  @@map("reactions")
-}
-
-model ChannelMember {
-  channelId String
-  userId    String
-  role      MemberRole @default(MEMBER)
-  createdAt DateTime   @default(now())
-  lastReadAt DateTime  @default(now()) @map("last_read_at")
-  joinedAt   DateTime  @default(now()) @map("joined_at")
-  unreadCount Int      @default(0) @map("unread_count")
-
-  // Relations
-  channel   Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([channelId, userId])
-  @@map("channel_members")
-}
-
-model ReadReceipt {
-  messageId String
-  userId    String
-  readAt    DateTime @default(now())
-
-  // Relations
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([messageId, userId])
-  @@map("read_receipts")
-}
-
-model ChannelDraft {
-  id        String   @id @default(uuid())
-  channelId String
-  userId    String
-  content   String
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([channelId, userId])
-  @@map("channel_drafts")
-}
-
-model ChannelInvitation {
-  id          String   @id @default(uuid())
-  channelId   String
-  inviterId   String
-  inviteeId   String
-  status      String   @default("PENDING") // PENDING, ACCEPTED, REJECTED
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  inviter     User     @relation("SentInvitations", fields: [inviterId], references: [id], onDelete: Cascade)
-  invitee     User     @relation("ReceivedInvitations", fields: [inviteeId], references: [id], onDelete: Cascade)
-
-  @@unique([channelId, inviterId, inviteeId])
-  @@map("channel_invitations")
-}
-
-model ChannelNavigation {
-  id        String   @id @default(uuid())
-  userId    String
-  channelId String
-  viewedAt  DateTime @default(now())
-  order     Int
-
-  // Relations
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, channelId])
-  @@map("channel_navigation")
-}
-
-model File {
-  id          String   @id @default(uuid())
-  name        String
-  type        String
-  size        Int
-  url         String
-  textContent String?
-  vectorIds   String[] // Array of vector IDs for chunked content
-  userId      String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("files")
-}
-
-model UserAvatar {
-  id        String   @id @default(uuid())
-  userId    String
-  analysis  Json     // Store message analysis
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([userId])
+  READ
 }

@@ -1,7 +1,8 @@
-import { Controller, Post, Body, Logger, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Controller, Post, Body, Logger, BadRequestException, InternalServerErrorException, UseGuards, Req } from '@nestjs/common';
 import { SearchService } from '../services/search.service';
 import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { ClerkAuthGuard } from '../../../guards/clerk-auth.guard';
 
 export interface SearchResponse {
   items?: any[];
@@ -48,58 +49,103 @@ export class SearchRequestDto {
   @IsNumber()
   @Min(0)
   minScore?: number;
+
+  @ApiProperty({
+    description: 'User ID performing the search',
+    example: 'test_user_1',
+    required: true,
+  })
+  @IsString()
+  userId: string;
+
+  @ApiProperty({
+    description: 'Channel ID',
+    example: 'test_channel_1',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  channelId?: string;
 }
 
 @Controller('search')
+@UseGuards(ClerkAuthGuard)
 export class SearchController {
-  private readonly logger = new Logger('SearchController');
-
   constructor(
     private readonly searchService: SearchService,
   ) {}
 
   @Post()
-  async search(@Body() searchRequest: SearchRequestDto): Promise<SearchResponse> {
-    const userId = 'user_001'; // Using live user ID
-    this.logger.log(`Search request from user ${userId}: ${JSON.stringify(searchRequest)}`);
-
+  async search(@Body() searchRequest: SearchRequestDto, @Req() req: any): Promise<SearchResponse> {
     try {
+      console.log('🔍 [SearchController] Received request:', {
+        query: searchRequest.query,
+        channelId: searchRequest.channelId,
+        userId: req.auth?.userId,
+        authUserId: req.auth?.userId,
+        rawBody: req.body
+      });
+
       // Extract command if present (e.g., /from, /thread, /summary)
       const commandMatch = searchRequest.query.match(/^\/(\w+)\s+(.+)$/);
       
       if (!commandMatch) {
-        // Direct search query
-        return this.searchService.search(searchRequest.query, {
-          userId,
+        console.log('🔍 [SearchController] No command found, performing semantic search with:', {
+          query: searchRequest.query,
+          userId: req.auth.userId,
           limit: searchRequest.limit,
           cursor: searchRequest.cursor,
-          minScore: searchRequest.minScore
+          minScore: searchRequest.minScore,
+          channelId: searchRequest.channelId,
+          searchType: 'semantic'
+        });
+
+        return this.searchService.search(searchRequest.query, {
+          userId: req.auth.userId,
+          limit: searchRequest.limit,
+          cursor: searchRequest.cursor,
+          minScore: searchRequest.minScore,
+          channelId: searchRequest.channelId,
+          searchType: 'semantic'
         });
       }
 
       const [, command, query] = commandMatch;
+      console.log('🔍 [SearchController] Command detected:', {
+        command,
+        query,
+        channelId: searchRequest.channelId
+      });
 
-      // Handle different command types
       switch (command.toLowerCase()) {
-        case 'rag': {
-          const response = await this.searchService.generateRagResponse(userId, query);
-          return {
-            response,
-            type: 'rag'
-          };
-        }
-
         case 'text':
-          return this.searchService.search(query, {
-            userId,
+          console.log('🔍 [SearchController] Performing text search with:', {
+            query: query.trim(),
+            userId: req.auth.userId,
             limit: searchRequest.limit,
-            cursor: searchRequest.cursor,
             minScore: searchRequest.minScore,
-            searchType: 'text'
+            channelId: searchRequest.channelId
           });
 
-        case 'from': {
-          // Extract user ID and query
+          const result = await this.searchService.search(query.trim(), {
+            userId: req.auth.userId,
+            limit: searchRequest.limit,
+            minScore: searchRequest.minScore,
+            channelId: searchRequest.channelId,
+            searchType: 'text'
+          });
+          console.log('🔍 [SearchController] Text search results:', {
+            total: result.total,
+            hasItems: result.items?.length > 0
+          });
+          return result;
+
+        case 'rag':
+          console.log('🔍 [SearchController] Performing RAG search');
+          const response = await this.searchService.generateRagResponse(req.auth.userId, query);
+          return { response, type: 'rag' };
+
+        case 'from':
           const [targetUserId, ...queryParts] = query.split(' ');
           const searchQuery = queryParts.join(' ');
           
@@ -107,28 +153,34 @@ export class SearchController {
             throw new BadRequestException('Both user ID and search query are required for /from command');
           }
 
+          console.log('🔍 [SearchController] Performing from-user search:', {
+            targetUserId,
+            searchQuery
+          });
+
           return this.searchService.search(searchQuery, {
-            userId,
+            userId: req.auth.userId,
             limit: searchRequest.limit,
             cursor: searchRequest.cursor,
             minScore: searchRequest.minScore,
+            fromUserId: targetUserId,
+            channelId: searchRequest.channelId,
             searchType: 'semantic'
           });
-        }
 
         default:
-          // Treat unknown commands as semantic search
-          this.logger.warn(`Unknown command type: ${command}`);
+          console.log('⚠️ [SearchController] Unknown command:', command);
           return this.searchService.search(query, {
-            userId,
+            userId: req.auth.userId,
             limit: searchRequest.limit,
             cursor: searchRequest.cursor,
             minScore: searchRequest.minScore,
+            channelId: searchRequest.channelId,
             searchType: 'semantic'
           });
       }
     } catch (error) {
-      this.logger.error(`Error processing search request: ${error.message}`, error.stack);
+      console.error('❌ [SearchController] Error:', error);
       if (error instanceof BadRequestException) {
         throw error;
       }

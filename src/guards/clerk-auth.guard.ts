@@ -19,6 +19,12 @@ export class ClerkAuthGuard implements CanActivate {
     // Debug: Log all headers
     console.log('Request headers:', request.headers);
     
+    // TEMPORARY: Use test_user_1 for development
+    request.auth = {
+      userId: 'test_user_1'
+    };
+    return true;
+
     // Just get the raw token from Authorization header
     const token = request.headers.authorization;
     

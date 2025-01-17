@@ -6,6 +6,7 @@ export interface SearchOptions {
   minScore?: number;
   searchType?: 'semantic' | 'text';  // Type of search to perform
   fromUserId?: string;  // For filtering messages from a specific user
+  channelId?: string;  // For filtering messages from a specific channel
 }
 
 export interface PageInfo {
