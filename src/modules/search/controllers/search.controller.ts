@@ -118,6 +118,29 @@ export class SearchController {
       });
 
       switch (command.toLowerCase()) {
+        case 'in':
+          console.log('🔍 [SearchController] Performing channel search with:', {
+            query,
+            userId: req.auth.userId,
+            channelId: searchRequest.channelId
+          });
+          
+          const [targetChannelId, ...searchQueryParts] = query.split(' ');
+          const channelSearchQuery = searchQueryParts.join(' ');
+          
+          if (!targetChannelId) {
+            throw new BadRequestException('Channel ID is required for /in command');
+          }
+
+          return this.searchService.search(channelSearchQuery || '', {
+            userId: req.auth.userId,
+            limit: searchRequest.limit,
+            cursor: searchRequest.cursor,
+            minScore: searchRequest.minScore,
+            channelId: targetChannelId,
+            searchType: 'semantic'
+          });
+
         case 'text':
           console.log('🔍 [SearchController] Performing text search with:', {
             query: query.trim(),
