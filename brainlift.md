@@ -336,3 +336,37 @@ await clerkClient.verifyToken(token);        // Direct verification
    - Clear type definitions
    - Optional properties
    - Type composition 
+
+# BrainLift Learnings
+
+## Vector Search Learnings
+
+### Vector Store Integration
+- Successfully stored 179 messages in batches of 10 for optimal processing
+- Message chunking and embedding preserved semantic meaning
+- Metadata (channelId, userId, timestamps) properly maintained
+- Pinecone index shows more records than messages due to chunking (210 vs 179)
+
+### Semantic Search Capabilities
+- Strong single-topic search performance (basketball, rap, boxing)
+- Excellent cross-topic understanding (sports + music connections)
+- Good handling of metaphors and analogies ("poetry in motion")
+- Meaningful relevance scores (0.7-0.9 for good matches)
+
+### Search Features
+- Cursor-based pagination for efficient result navigation
+- Score filtering removes low-relevance results effectively
+- Channel-based access control properly enforced
+- Dual search modes: semantic and text-based
+
+### Architecture Insights
+- Separation of concerns: Prisma for messages, Pinecone for vector search
+- Batch processing manages API limits and performance
+- Cursor-based pagination handles large result sets well
+- Authentication can be temporarily disabled for testing
+
+### Enhancement Opportunities
+- Add more comprehensive logging for vector store operations
+- Implement caching for frequent search queries
+- Optimize chunking strategy based on message patterns
+- Add search analytics to improve relevance over time 

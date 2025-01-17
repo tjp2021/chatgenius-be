@@ -179,9 +179,8 @@ export class MessagesService {
         content: createMessageDto.content,
         channelId: createMessageDto.channelId,
         userId,
-        replyToId: createMessageDto.replyToId,
-        deliveryStatus: MessageDeliveryStatus.SENT,
-        vectorId: messageId,
+        replyToId: createMessageDto.replyToId || null,
+        deliveryStatus: MessageDeliveryStatus.SENT
       },
       include: {
         user: {
@@ -189,6 +188,17 @@ export class MessagesService {
             id: true,
             name: true,
             imageUrl: true,
+          },
+        },
+        replyTo: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
           },
         },
       },
@@ -434,6 +444,9 @@ export class MessagesService {
 
   /**
    * Search messages across user's accessible channels using semantic search
+   * @param userId The ID of the user performing the search
+   * @param query The search query
+   * @param options Search options including limit, cursor, minScore, and search type
    */
   async searchMessages(
     userId: string, 
@@ -443,7 +456,8 @@ export class MessagesService {
     const { 
       limit = 20,
       cursor,
-      minScore = 0.5 
+      minScore = 0.5,
+      searchType = 'semantic'
     } = options;
 
     // Get all channels the user has access to
@@ -460,6 +474,68 @@ export class MessagesService {
         items: [],
         pageInfo: { hasNextPage: false },
         total: 0
+      };
+    }
+
+    // For text-based search, use database query
+    if (searchType === 'text') {
+      const messages = await this.prisma.message.findMany({
+        where: {
+          channelId: { in: channelIds },
+          content: {
+            contains: query,
+            mode: 'insensitive'
+          }
+        },
+        take: limit,
+        ...(cursor && {
+          cursor: { id: cursor },
+          skip: 1
+        }),
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              imageUrl: true,
+            },
+          },
+          replyTo: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  imageUrl: true,
+                },
+              },
+            },
+          },
+        }
+      });
+
+      const total = await this.prisma.message.count({
+        where: {
+          channelId: { in: channelIds },
+          content: {
+            contains: query,
+            mode: 'insensitive'
+          }
+        }
+      });
+
+      return {
+        items: messages.map(msg => ({
+          ...msg,
+          score: 1, // Text matches get full score
+          replyTo: msg.replyTo ?? undefined
+        })),
+        pageInfo: {
+          hasNextPage: messages.length === limit,
+          endCursor: messages.length === limit ? messages[messages.length - 1].id : undefined
+        },
+        total
       };
     }
 

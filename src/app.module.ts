@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { SearchController } from './controllers/search.controller';
 import { DataController } from './controllers/data.controller';
 import { AiService } from './lib/ai.service';
 import { AiController } from './controllers/ai.controller';
@@ -40,7 +39,7 @@ import { ResponseSynthesisModule } from './lib/response-synthesis.module';
     AvatarModule,
     ResponseSynthesisModule,
   ],
-  controllers: [AppController, SearchController, DataController, AiController],
+  controllers: [AppController, DataController, AiController],
   providers: [
     AppService,
     AiService,

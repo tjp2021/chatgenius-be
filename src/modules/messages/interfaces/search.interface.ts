@@ -4,6 +4,7 @@ export interface SearchOptions {
   limit?: number;
   cursor?: string;  // Base64 encoded cursor
   minScore?: number;
+  searchType?: 'semantic' | 'text';  // Type of search to perform
 }
 
 export interface PageInfo {
