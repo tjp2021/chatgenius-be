@@ -59,7 +59,7 @@ export class PineconeService implements OnModuleInit {
       vector: values,
       topK,
       includeMetadata: true,
-      filter: options.filter
+      filter: options.filter || undefined
     });
   }
 

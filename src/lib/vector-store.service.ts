@@ -49,7 +49,13 @@ interface SearchOptions {
     hasReactions?: boolean;
     fromUsers?: string[];
     excludeUsers?: string[];
+    dateRange?: {
+      start: string;
+      end: string;
+    };
   };
+  page?: number;
+  pageSize?: number;
 }
 
 interface PineconeQueryOptions {
@@ -332,35 +338,31 @@ export class VectorStoreService {
 
     // Initialize filter with a default condition to satisfy Pinecone's requirement
     const pineconeOptions: PineconeQueryOptions = {
-      filter: {
-        messageId: { $exists: true }  // Default filter that matches all messages
-      },
+      filter: undefined,
       cursor: options.cursor
     };
 
+    // Add user filter if specified
+    if (options.filters?.fromUsers?.length === 1) {
+      pineconeOptions.filter = { userId: options.filters.fromUsers[0] };
+    }
+
     // Add channel filter if specified
     if (options.channelId) {
-      pineconeOptions.filter.channelId = options.channelId;
-    } else if (options.channelIds?.length) {
-      pineconeOptions.filter.channelId = { $in: options.channelIds };
+      pineconeOptions.filter = {
+        ...pineconeOptions.filter,
+        channelId: options.channelId
+      };
     }
 
     // Add date range filter if specified
     if (options.dateRange) {
-      pineconeOptions.filter.timestamp = {
-        $gte: options.dateRange.start,
-        $lte: options.dateRange.end
-      };
-    }
-
-    // Add user filters if specified
-    if (options.filters?.fromUsers?.length) {
-      pineconeOptions.filter.userId = { $in: options.filters.fromUsers };
-    }
-    if (options.filters?.excludeUsers?.length) {
-      pineconeOptions.filter.userId = { 
-        ...pineconeOptions.filter.userId,
-        $nin: options.filters.excludeUsers 
+      pineconeOptions.filter = {
+        ...pineconeOptions.filter,
+        timestamp: {
+          $gte: options.dateRange.start,
+          $lte: options.dateRange.end
+        }
       };
     }
 
@@ -386,15 +388,42 @@ export class VectorStoreService {
     // Set minimum semantic score threshold
     const MIN_SEMANTIC_SCORE = 0.7;
 
+    // Get pagination parameters
+    const page = options.page || 1;
+    const pageSize = options.pageSize || 10;
+
+    // Get the target user ID if specified
+    const targetUserId = options.filters?.fromUsers?.[0];
+    console.log('Target User ID:', targetUserId);
+    console.log('Options:', JSON.stringify(options));
+
     for (const match of results.matches) {
+      console.log('Processing match:', {
+        userId: match.metadata.userId,
+        score: match.score
+      });
+
+      // Skip if not from target user when user filter is specified
+      if (targetUserId && match.metadata.userId !== targetUserId) {
+        console.log('Skipping - user mismatch');
+        continue;
+      }
+
       const content = match.metadata.content as string;
-      if (!this.isValidContent(content)) continue;
+      if (!this.isValidContent(content)) {
+        console.log('Skipping - invalid content');
+        continue;
+      }
 
       // Calculate component scores
       const semanticScore = match.score;
+      console.log('Semantic score:', semanticScore);
       
-      // Skip if semantic score is too low - this is the key change
-      if (semanticScore < MIN_SEMANTIC_SCORE) continue;
+      // Skip if semantic score is too low
+      if (semanticScore < MIN_SEMANTIC_SCORE) {
+        console.log('Skipping - low semantic score');
+        continue;
+      }
 
       const timeScore = this.calculateTimeScore(match.metadata.timestamp as string);
       const channelScore = this.calculateChannelScore(
@@ -404,36 +433,26 @@ export class VectorStoreService {
       const threadScore = match.metadata.replyTo ? 
         this.calculateThreadScore(match.metadata.messageId as string, [match.metadata.replyTo as string]) : 1;
 
-      // Calculate weighted average score with higher weight on semantic relevance
+      // Calculate weighted average score
       const finalScore = (
-        semanticScore * 0.8 +  // Increased weight for semantic relevance
-        timeScore * 0.1 +     // Reduced weight for time
-        channelScore * 0.05 + // Reduced weight for channel
-        threadScore * 0.05    // Reduced weight for thread
+        semanticScore * 0.8 +
+        timeScore * 0.1 +
+        channelScore * 0.05 +
+        threadScore * 0.05
       );
 
       // Skip if final score is below minimum
       if (finalScore < minScore) continue;
 
-      const message = {
+      processedMessages.push({
         id: match.metadata.messageId as string,
-        content: content,
+        content,
         score: finalScore,
         metadata: {
           channelId: match.metadata.channelId as string,
           userId: match.metadata.userId as string,
           timestamp: match.metadata.timestamp as string,
-          replyTo: match.metadata.replyTo as string | undefined,
-          userName: (match.metadata as ExtendedMetadata).userName || 
-                   (match.metadata as ExtendedMetadata).user?.name || 
-                   'Unknown',
-          user: {
-            id: match.metadata.userId as string,
-            name: (match.metadata as ExtendedMetadata).userName || 
-                  (match.metadata as ExtendedMetadata).user?.name || 
-                  'Unknown',
-            role: (match.metadata as ExtendedMetadata).user?.role || 'user'
-          },
+          severity: match.metadata.severity as string,
           scores: {
             semantic: semanticScore,
             time: timeScore,
@@ -442,24 +461,21 @@ export class VectorStoreService {
             final: finalScore
           }
         }
-      };
-
-      // Only add if not a duplicate and meets score threshold
-      if (!this.isDuplicate(message, processedMessages)) {
-        processedMessages.push(message);
-        if (processedMessages.length >= limit) break;
-      }
+      });
     }
 
-    // Sort by final score after all calculations
-    processedMessages.sort((a, b) => b.score - a.score);
+    console.log('Processed messages:', processedMessages.length);
 
-    // Only include messages that meet the minimum score requirement
-    const validMessages = processedMessages.filter(msg => msg.score >= minScore);
+    // Sort by score and apply pagination
+    processedMessages.sort((a, b) => b.score - a.score);
+    const paginatedMessages = processedMessages.slice(
+      (page - 1) * pageSize,
+      page * pageSize
+    );
 
     return {
-      messages: validMessages,
-      total: validMessages.length,
+      messages: paginatedMessages,
+      total: processedMessages.length,
       hasMore: results.matches.length > processedMessages.length,
       nextCursor: results.matches.length > processedMessages.length ? results.matches[limit].id : undefined,
       metadata: {

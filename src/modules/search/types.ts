@@ -49,6 +49,7 @@ export interface SearchResult {
 
 export interface SearchOptions {
   query: string;
+  userId?: string;
   channelId?: string;
   channelIds?: string[];
   topK?: number;
@@ -82,6 +83,20 @@ export interface SearchResponse {
     hasNextPage: boolean;
     cursor?: string;
     total: number;
+  };
+}
+
+export interface RAGOptions {
+  query: string;
+  userId?: string;
+  contextLimit?: number;
+  minContextScore?: number;
+  channelId?: string;
+  dateRange?: { start: string; end: string; };
+  responseFormat?: {
+    maxLength?: number;
+    style?: 'concise' | 'detailed';
+    includeQuotes?: boolean;
   };
 }
 

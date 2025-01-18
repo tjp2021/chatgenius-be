@@ -20,7 +20,7 @@ export class MessagesController {
     @Query('cursor') cursor?: string,
   ) {
     try {
-      this.logger.log(`Getting messages for channel ${channelId} by user ${req.auth?.userId}`);
+      this.logger.log(`Getting messages for channel ${channelId} by user ${req.auth.userId}`);
       
       if (!req.auth?.userId) {
         throw new Error('User ID not found in request');
@@ -104,9 +104,6 @@ export class MessagesController {
     }
   }
 
-  /**
-   * Get messages in a thread with pagination
-   */
   @Get(':threadId/thread')
   async getThreadMessages(
     @Param('threadId') threadId: string,
@@ -115,7 +112,7 @@ export class MessagesController {
     @Query('cursor') cursor?: string,
   ) {
     try {
-      this.logger.log(`Getting thread messages for thread ${threadId} by user ${req.auth?.userId}`);
+      this.logger.log(`Getting thread messages for thread ${threadId} by user ${req.auth.userId}`);
       
       if (!req.auth?.userId) {
         throw new Error('User ID not found in request');
