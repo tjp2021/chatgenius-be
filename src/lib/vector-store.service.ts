@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PineconeService, Vector, QueryOptions } from './pinecone.service';
+import { PineconeService, Vector } from './pinecone.service';
 import { EmbeddingService } from './embedding.service';
 import { TextChunkingService, TextChunk } from './text-chunking.service';
 import { ScoredPineconeRecord } from '@pinecone-database/pinecone';
@@ -35,6 +35,27 @@ interface SearchOptions {
   channelIds?: string[];
   topK?: number;
   minScore?: number;
+  cursor?: string;
+  dateRange?: { start: string; end: string; };
+  threadOptions?: {
+    include: boolean;
+    expand: boolean;
+    maxReplies?: number;
+    scoreThreshold?: number;
+  };
+  filters?: {
+    messageTypes?: Array<'message' | 'thread_reply' | 'file_share' | 'code_snippet'>;
+    hasAttachments?: boolean;
+    hasReactions?: boolean;
+    fromUsers?: string[];
+    excludeUsers?: string[];
+  };
+}
+
+interface PineconeQueryOptions {
+  filter?: any;
+  cursor?: string;
+  dateRange?: { start: string; end: string; };
 }
 
 interface BatchResult {
@@ -48,6 +69,32 @@ interface PineconeChunkMetadata extends ChunkMetadata {
   chunkIndex: number;
 }
 
+export interface SearchResult {
+  messages: Array<{
+    id: string;
+    content: string;
+    score: number;
+    metadata: MessageMetadata & {
+      userName?: string;
+      threadInfo?: {
+        replyCount: number;
+        latestReplies: Array<{
+          id: string;
+          content: string;
+          score: number;
+          metadata: MessageMetadata & {
+            userName?: string;
+          };
+        }>;
+      };
+    };
+  }>;
+  total: number;
+  hasMore: boolean;
+  nextCursor?: string;
+  threadMatches?: number;
+}
+
 @Injectable()
 export class VectorStoreService {
   // Decay factor for time-based scoring (can be adjusted)
@@ -58,6 +105,9 @@ export class VectorStoreService {
   private readonly THREAD_BOOST_FACTOR = 1.5;
   // Default minimum score threshold
   private readonly DEFAULT_MIN_SCORE = 0.6;
+  private readonly MIN_CONTENT_LENGTH = 10; // Minimum content length to be considered valid
+  private readonly DUPLICATE_TIME_WINDOW = 60 * 1000; // 60 seconds in milliseconds
+  private readonly CONTENT_SIMILARITY_THRESHOLD = 0.9; // 90% similar content is considered duplicate
 
   constructor(
     private pinecone: PineconeService,
@@ -224,196 +274,144 @@ export class VectorStoreService {
     await this.pinecone.upsertVectors(vectors);
   }
 
-  async findSimilarMessages(content: string, options: SearchOptions = {}) {
-    const { channelId, channelIds, topK = 5, minScore = this.DEFAULT_MIN_SCORE } = options;
-    
-    // Extract actual query from /text command if present
-    const actualQuery = content.startsWith('/text ') ? content.substring(6) : content;
-    
-    // 1. Create embedding for search query
-    const vector = await this.embedding.createEmbedding(actualQuery);
-    
-    // 2. Prepare filter for channel-aware search
-    const filter: QueryOptions['filter'] = channelId ? 
-      { channelId: { $eq: channelId } } : 
-      channelIds?.length ? 
-        { channelId: { $in: channelIds } } : 
-        undefined;
-    
-    // 3. Search in Pinecone with increased topK to account for chunks
-    const chunkResults = await this.pinecone.queryVectors(vector, topK * 3, { filter }) as {
-      matches?: ScoredPineconeRecord<PineconeChunkMetadata>[];
-      namespace: string;
-    };
-    
-    // 4. Group chunks by original message ID and calculate scores
-    const messageMap = new Map<string, {
-      chunks: ScoredPineconeRecord<PineconeChunkMetadata>[],
-      maxScore: number,
-      metadata: PineconeChunkMetadata
-    }>();
+  private isValidContent(content: string): boolean {
+    return content.trim().length >= this.MIN_CONTENT_LENGTH;
+  }
 
-    // Track thread messages for scoring
-    const threadMessages = new Set<string>();
-    chunkResults.matches?.forEach(match => {
-      const metadata = match.metadata as PineconeChunkMetadata;
-      const messageId = metadata.messageId?.toString() || match.id;
-      if (metadata.replyTo) {
-        threadMessages.add(metadata.replyTo);
-        threadMessages.add(messageId);
+  private isDuplicate(message: { content: string, metadata: { timestamp: string } }, 
+                     existingMessages: Array<{ content: string, metadata: { timestamp: string } }>): boolean {
+    const messageTime = new Date(message.metadata.timestamp).getTime();
+    
+    return existingMessages.some(existing => {
+      // Check time proximity
+      const existingTime = new Date(existing.metadata.timestamp).getTime();
+      const timeProximity = Math.abs(messageTime - existingTime);
+      
+      if (timeProximity > this.DUPLICATE_TIME_WINDOW) {
+        return false;
       }
-    });
 
-    chunkResults.matches?.forEach(match => {
-      const metadata = match.metadata as PineconeChunkMetadata;
-      const messageId = metadata.messageId?.toString() || match.id;
-      const existing = messageMap.get(messageId) || { 
-        chunks: [], 
-        maxScore: 0, 
+      // Check content similarity (simple for now)
+      const normalizedContent = message.content.toLowerCase().trim();
+      const normalizedExisting = existing.content.toLowerCase().trim();
+      
+      // If contents are very similar and within time window, consider it a duplicate
+      return normalizedContent === normalizedExisting;
+    });
+  }
+
+  async findSimilarMessages(query: string, options: SearchOptions = {}): Promise<SearchResult> {
+    const queryEmbedding = await this.embedding.createEmbedding(query);
+    const minScore = options.minScore || this.DEFAULT_MIN_SCORE;
+    const limit = options.topK || 10;
+
+    const pineconeOptions: PineconeQueryOptions = {
+      filter: {},
+      cursor: options.cursor
+    };
+
+    // Add channel filter if specified
+    if (options.channelId) {
+      pineconeOptions.filter.channelId = options.channelId;
+    } else if (options.channelIds?.length) {
+      pineconeOptions.filter.channelId = { $in: options.channelIds };
+    }
+
+    // Add date range filter if specified
+    if (options.dateRange) {
+      pineconeOptions.filter.timestamp = {
+        $gte: options.dateRange.start,
+        $lte: options.dateRange.end
+      };
+    }
+
+    // Add user filters if specified
+    if (options.filters?.fromUsers?.length) {
+      pineconeOptions.filter.userId = { $in: options.filters.fromUsers };
+    }
+    if (options.filters?.excludeUsers?.length) {
+      pineconeOptions.filter.userId = { 
+        ...pineconeOptions.filter.userId,
+        $nin: options.filters.excludeUsers 
+      };
+    }
+
+    const results = await this.pinecone.queryVectors(queryEmbedding, limit * 2, pineconeOptions);
+    
+    // Filter and process results with duplicate detection
+    const processedMessages: Array<{
+      id: string,
+      content: string,
+      score: number,
+      metadata: MessageMetadata & { userName?: string }
+    }> = [];
+
+    for (const match of results.matches) {
+      const content = match.metadata.content as string;
+      if (!this.isValidContent(content)) continue;
+
+      const message = {
+        id: match.metadata.messageId as string,
+        content: content,
+        score: match.score,
         metadata: {
-          ...metadata,
-          messageId
+          channelId: match.metadata.channelId as string,
+          userId: match.metadata.userId as string,
+          timestamp: match.metadata.timestamp as string,
+          replyTo: match.metadata.replyTo as string | undefined,
+          userName: match.metadata.userName as string | undefined
         }
       };
-      
-      // Only add chunk if we don't already have one with same index
-      const chunkIndex = metadata.chunkIndex;
-      const hasChunkWithIndex = existing.chunks.some(
-        c => (c.metadata as PineconeChunkMetadata).chunkIndex === chunkIndex
-      );
 
-      if (!hasChunkWithIndex) {
-        existing.chunks.push(match);
-      } else {
-        // If we have a chunk with this index, keep the one with higher score
-        const existingChunk = existing.chunks.find(
-          c => (c.metadata as PineconeChunkMetadata).chunkIndex === chunkIndex
-        );
-        if (match.score > existingChunk.score) {
-          existing.chunks = existing.chunks.filter(
-            c => (c.metadata as PineconeChunkMetadata).chunkIndex !== chunkIndex
-          );
-          existing.chunks.push(match);
-        }
+      // Only add if not a duplicate
+      if (!this.isDuplicate(message, processedMessages)) {
+        processedMessages.push(message);
+        if (processedMessages.length >= limit) break;
       }
+    }
 
-      existing.maxScore = Math.max(existing.maxScore, match.score);
-      messageMap.set(messageId, existing);
-    });
-
-    // 5. Transform results and include context
-    const messages = Array.from(messageMap.values())
-      .filter(({ maxScore }) => maxScore >= minScore)
-      .map(({ chunks, maxScore, metadata }) => {
-        const timeScore = this.calculateTimeScore(metadata.timestamp.toString());
-        const channelScore = this.calculateChannelScore(
-          metadata.channelId.toString(),
-          channelId
-        );
-        const messageId = metadata.messageId.toString();
-        const threadScore = this.calculateThreadScore(messageId, Array.from(threadMessages));
-
-        // Sort chunks by index before reconstruction
-        const sortedChunks = chunks.sort(
-          (a, b) => (a.metadata as PineconeChunkMetadata).chunkIndex - (b.metadata as PineconeChunkMetadata).chunkIndex
-        );
-
-        // Reconstruct full message content if chunks exist
-        const reconstructedContent = chunks.length > 1 ? 
-          this.textChunking.reconstructText(
-            sortedChunks.map(chunk => ({
-              content: (chunk.metadata as PineconeChunkMetadata).content,
-              metadata: chunk.metadata as PineconeChunkMetadata
-            }))
-          ) : (chunks[0].metadata as PineconeChunkMetadata).content || '';
-        
-        return {
-          id: metadata.messageId.toString(),
-          content: reconstructedContent,
-          score: maxScore,  // Store raw score for now
-          metadata: {
-            ...metadata,
-            originalScore: maxScore,
-            timeScore,
-            channelScore,
-            threadScore,
-            replyTo: metadata.replyTo
-          }
-        };
-      });
-
-    // 6. Group messages by thread
-    const threadGroups = new Map<string, typeof messages>();
-    messages.forEach(msg => {
-      const threadId = msg.metadata.replyTo || msg.id;  // Use replyTo as thread ID, or message ID if no reply
-      const group = threadGroups.get(threadId) || [];
-      group.push(msg);
-      threadGroups.set(threadId, group);
-    });
-
-    // 7. Calculate thread scores and sort
-    const sortedMessages = Array.from(threadGroups.values())
-      .map(group => {
-        // All messages in thread get thread boost
-        const hasThreadBoost = group.length > 1;
-        
-        // Calculate scores for each message in thread
-        return group.map(msg => {
-          // Within threads, boost the importance of time even more
-          const timeBoost = hasThreadBoost ? Math.pow(msg.metadata.timeScore, 3) : Math.pow(msg.metadata.timeScore, 2);
-          
-          const finalScore = msg.score * 
-            timeBoost * 
-            msg.metadata.channelScore * 
-            (hasThreadBoost ? this.THREAD_BOOST_FACTOR : 1);
-            
-          return {
-            ...msg,
-            score: finalScore,
-            metadata: {
-              ...msg.metadata,
-              threadScore: hasThreadBoost ? this.THREAD_BOOST_FACTOR : 1
-            }
-          };
-        });
-      })
-      .flat()
-      .sort((a, b) => {
-        // First compare by score
-        const scoreDiff = b.score - a.score;
-        // If scores are very close (within 0.01), use timestamp as tiebreaker
-        if (Math.abs(scoreDiff) < 0.01) {
-          return new Date(b.metadata.timestamp).getTime() - new Date(a.metadata.timestamp).getTime();
-        }
-        return scoreDiff;
-      })
-      .slice(0, topK);
-
-    // 8. Include context for messages with replyTo
-    return Promise.all(
-      sortedMessages.map(async (msg) => {
-        const replyToId = msg.metadata?.replyTo;
-        if (replyToId && typeof replyToId === 'string') {
-          const parentMessage = await this.pinecone.getVectorById(replyToId);
-          
-          if (parentMessage) {
-            return {
-              ...msg,
-              context: {
-                parentMessage: {
-                  id: parentMessage.id,
-                  metadata: parentMessage.metadata
-                }
-              }
-            };
-          }
-        }
-        return msg;
-      })
-    );
+    return {
+      messages: processedMessages,
+      total: processedMessages.length,
+      hasMore: results.matches.length > processedMessages.length,
+      nextCursor: results.matches.length > processedMessages.length ? results.matches[limit].id : undefined
+    };
   }
 
   async clearVectors() {
     await this.pinecone.clearVectors();
+  }
+
+  private async findThreadReplies(threadId: string, options: {
+    maxReplies?: number;
+    scoreThreshold?: number;
+  } = {}): Promise<Array<{
+    id: string;
+    content: string;
+    score: number;
+    metadata: MessageMetadata & {
+      userName?: string;
+    };
+  }>> {
+    const { maxReplies = 3, scoreThreshold = 0.5 } = options;
+
+    // Get all replies to this thread
+    const replies = await this.pinecone.queryVectors(null, maxReplies, {
+      filter: {
+        replyTo: { $eq: threadId }
+      }
+    } as PineconeQueryOptions);
+
+    return (replies.matches || [])
+      .filter(match => match.score >= scoreThreshold)
+      .map(match => ({
+        id: match.id,
+        content: String(match.metadata.content),
+        score: match.score,
+        metadata: {
+          ...match.metadata as MessageMetadata,
+          userName: String(match.metadata.userName || '')
+        }
+      }));
   }
 } 

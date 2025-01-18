@@ -1,87 +1,222 @@
-import { Injectable } from '@nestjs/common';
-import { MessagesService } from '../../messages/services/messages.service';
+import { Injectable, Logger } from '@nestjs/common';
+import { VectorStoreService } from '../../../lib/vector-store.service';
 import { ResponseSynthesisService } from '../../../lib/response-synthesis.service';
-import { SearchOptions } from '../../messages/interfaces/search.interface';
+import { MessageContent, SearchOptions, SearchResponse, RAGResponse, VectorResults } from '../types';
 
 @Injectable()
 export class SearchService {
+  private readonly logger = new Logger(SearchService.name);
+
   constructor(
-    private readonly messagesService: MessagesService,
-    private readonly responseSynthesisService: ResponseSynthesisService,
+    private readonly vectorStore: VectorStoreService,
+    private readonly responseSynthesis: ResponseSynthesisService
   ) {}
 
-  async search(query: string, options: SearchOptions) {
-    console.log('🔍 [SearchService] Starting search with options:', {
-      query,
-      options,
-      searchType: options.searchType || 'semantic'
-    });
-
-    const messages = await this.messagesService.searchMessages(
-      options.userId,
-      query,
-      {
-        userId: options.userId,
-        limit: options.limit,
-        cursor: options.cursor,
-        minScore: options.minScore,
-        fromUserId: options.fromUserId,
-        channelId: options.channelId,
-        searchType: options.searchType || 'semantic'
-      }
-    );
-
-    console.log('🔍 [SearchService] Search results:', {
-      total: messages.total,
-      hasItems: messages.items?.length > 0,
-      firstItemScore: messages.items?.[0]?.score,
-      firstItemContent: messages.items?.[0]?.content?.substring(0, 100)
-    });
-
-    return messages;
+  private mapToMessageContent(msg: any): MessageContent {
+    return {
+      id: msg.id,
+      content: msg.content,
+      metadata: msg.metadata,
+      score: msg.score,
+      user: {
+        id: msg.metadata.userId,
+        name: msg.metadata.userName || 'Unknown',
+        role: 'user'
+      },
+      thread: msg.metadata.threadInfo ? {
+        threadId: msg.metadata.replyTo || msg.id,
+        replyCount: msg.metadata.threadInfo.replyCount,
+        participantCount: 1, // TODO: Calculate actual participant count
+        lastActivity: msg.metadata.timestamp,
+        status: 'active',
+        latestReplies: msg.metadata.threadInfo.latestReplies?.map(reply => this.mapToMessageContent(reply))
+      } : undefined
+    };
   }
 
-  async generateRagResponse(userId: string, query: string): Promise<string> {
-    console.log('🔍 [SearchService] Generating RAG response:', {
-      userId,
-      query
-    });
+  async semanticSearch(params: {
+    query: string;
+    limit?: number;
+    minScore?: number;
+    cursor?: string;
+    dateRange?: { start: string; end: string; };
+  }): Promise<SearchResponse> {
+    try {
+      const startTime = Date.now();
+      const results = await this.vectorStore.findSimilarMessages(params.query, {
+        topK: params.limit,
+        minScore: params.minScore,
+        cursor: params.cursor,
+        dateRange: params.dateRange
+      });
 
-    // Get relevant messages
-    const messages = await this.messagesService.searchMessages(userId, query, {
-      userId,
-      limit: 5,
-      minScore: 0.5,
-      searchType: 'semantic'
-    });
-
-    console.log('🔍 [SearchService] RAG search results:', {
-      total: messages.total,
-      hasItems: messages.items?.length > 0,
-      scores: messages.items?.map(m => m.score)
-    });
-
-    if (!messages.items?.length) {
-      console.log('⚠️ [SearchService] No relevant messages found for RAG');
-      return 'I could not find any relevant context to answer your question.';
+      return {
+        items: results.messages.map(msg => this.mapToMessageContent(msg)),
+        metadata: {
+          searchTime: Date.now() - startTime,
+          totalMatches: results.total
+        },
+        pageInfo: {
+          hasNextPage: results.hasMore,
+          cursor: results.nextCursor,
+          total: results.total
+        }
+      };
+    } catch (error) {
+      this.logger.error(`Semantic search failed: ${error.message}`, error.stack);
+      throw error;
     }
+  }
 
-    console.log('🔍 [SearchService] Found relevant messages:', {
-      count: messages.items.length
-    });
+  async channelSearch(
+    channelId: string,
+    params: {
+      query: string;
+      limit?: number;
+      minScore?: number;
+      cursor?: string;
+      dateRange?: { start: string; end: string; };
+      sortBy?: 'relevance' | 'date';
+      threadOptions?: {
+        include: boolean;
+        expand: boolean;
+        maxReplies?: number;
+        scoreThreshold?: number;
+      };
+      filters?: {
+        messageTypes?: Array<'message' | 'thread_reply' | 'file_share' | 'code_snippet'>;
+        hasAttachments?: boolean;
+        hasReactions?: boolean;
+        fromUsers?: string[];
+        excludeUsers?: string[];
+      };
+    }
+  ): Promise<SearchResponse> {
+    try {
+      const startTime = Date.now();
+      const results = await this.vectorStore.findSimilarMessages(params.query, {
+        channelId,
+        topK: params.limit,
+        minScore: params.minScore,
+        cursor: params.cursor,
+        dateRange: params.dateRange,
+        threadOptions: params.threadOptions,
+        filters: params.filters
+      });
 
-    // Format context messages
-    const context = messages.items.map(msg => {
-      return `${msg.user.name}: ${msg.content}`;
-    }).join('\n\n');
+      return {
+        items: results.messages.map(msg => this.mapToMessageContent(msg)),
+        metadata: {
+          searchTime: Date.now() - startTime,
+          totalMatches: results.total,
+          threadMatches: results.threadMatches
+        },
+        pageInfo: {
+          hasNextPage: results.hasMore,
+          cursor: results.nextCursor,
+          total: results.total
+        }
+      };
+    } catch (error) {
+      this.logger.error(`Channel search failed: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
 
-    // Synthesize response
-    const response = await this.responseSynthesisService.synthesizeResponse({
-      channelId: 'rag-response',
-      prompt: `Based on the following context, answer this question:\n\nContext:\n${context}\n\nQuestion: ${query}`
-    });
-    
-    console.log('🔍 [SearchService] Generated RAG response');
-    return response.response;
+  async userSearch(
+    userId: string,
+    params: {
+      query: string;
+      limit?: number;
+      channelId?: string;
+      includeThreads?: boolean;
+      cursor?: string;
+      dateRange?: { start: string; end: string; };
+      messageTypes?: Array<'message' | 'thread_reply' | 'file_share' | 'code_snippet'>;
+    }
+  ): Promise<SearchResponse> {
+    try {
+      const startTime = Date.now();
+      const results = await this.vectorStore.findSimilarMessages(params.query, {
+        channelId: params.channelId,
+        topK: params.limit,
+        cursor: params.cursor,
+        dateRange: params.dateRange,
+        filters: {
+          fromUsers: [userId],
+          messageTypes: params.messageTypes
+        },
+        threadOptions: {
+          include: params.includeThreads ?? true,
+          expand: false
+        }
+      });
+
+      return {
+        items: results.messages.map(msg => this.mapToMessageContent(msg)),
+        metadata: {
+          searchTime: Date.now() - startTime,
+          totalMatches: results.total
+        },
+        pageInfo: {
+          hasNextPage: results.hasMore,
+          cursor: results.nextCursor,
+          total: results.total
+        }
+      };
+    } catch (error) {
+      this.logger.error(`User search failed: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  async ragSearch(params: {
+    query: string;
+    contextLimit?: number;
+    minContextScore?: number;
+    channelId?: string;
+    dateRange?: { start: string; end: string; };
+    responseFormat?: {
+      maxLength?: number;
+      style?: 'concise' | 'detailed';
+      includeQuotes?: boolean;
+    };
+  }): Promise<RAGResponse> {
+    try {
+      const startTime = Date.now();
+      
+      // 1. Get relevant messages
+      const results = await this.vectorStore.findSimilarMessages(params.query, {
+        channelId: params.channelId,
+        topK: params.contextLimit || 5,
+        minScore: params.minContextScore || 0.7,
+        dateRange: params.dateRange
+      });
+
+      // 2. Format context
+      const context = results.messages
+        .map(msg => `${msg.metadata.userName || 'Unknown'}: ${msg.content}`)
+        .join('\n\n');
+
+      // 3. Generate response
+      const response = await this.responseSynthesis.synthesizeResponse({
+        channelId: params.channelId || 'rag-response',
+        prompt: `Based on the following context, answer this question:
+                Context: ${context}
+                Question: ${params.query}`
+      });
+
+      return {
+        ...response,
+        metadata: {
+          searchTime: Date.now() - startTime,
+          contextQuality: results.messages.length > 0 ? 
+            results.messages[0].score : 0
+        }
+      };
+    } catch (error) {
+      this.logger.error(`RAG search failed: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 } 

@@ -1,284 +1,366 @@
 # Search API Documentation
 
-## Endpoint: POST /search
+## Overview
+Our search system provides four distinct search types, each optimized for specific use cases. All endpoints require authentication and support basic rate limiting and error handling.
 
-This endpoint provides unified search functionality including semantic search, RAG, and filtered searches.
+## Common Types
 
-## Authentication
-```http
-Authorization: Bearer YOUR_TOKEN
-x-user-id: required_user_id
-```
-
-## Request Format
-
-### Base Request Structure
+### PaginationInfo
 ```typescript
 {
-  query: string;        // Required: Search query or command
-  limit?: number;       // Optional: Results per page (default: 10)
-  cursor?: string;      // Optional: Pagination cursor
-  minScore?: number;    // Optional: Minimum relevance score (0-1)
-  channelId?: string;   // Optional: Specific channel to search
+  hasNextPage: boolean;
+  cursor?: string;
+  total: number;
 }
 ```
 
-## Query Types and Examples
-
-### 1. Direct Semantic Search
-```typescript
-// Request
-{
-  "query": "deployment issues with kubernetes",
-  "limit": 10,
-  "minScore": 0.7
-}
-
-// Response
-{
-  "items": [
-    {
-      "id": "msg_123",
-      "content": "We're seeing pod scheduling issues in production",
-      "score": 0.89,
-      "metadata": {
-        "channelId": "channel_456",
-        "userId": "user_789",
-        "timestamp": 1707824461,
-        "replyToId": null,
-        "threadId": null
-      }
-    }
-  ],
-  "pageInfo": {
-    "hasNextPage": true,
-    "endCursor": "cursor_xyz"
-  },
-  "total": 45
-}
-```
-
-### 2. Channel-Specific Search (/in command)
-```typescript
-// Request
-{
-  "query": "/in channel_123 deployment issues",
-  "limit": 5
-}
-
-// Response
-{
-  "items": [
-    {
-      "id": "msg_456",
-      "content": "Fixed the deployment configuration",
-      "score": 0.92,
-      "metadata": {
-        "channelId": "channel_123",
-        "userId": "user_789",
-        "timestamp": 1707824461
-      }
-    }
-  ],
-  "pageInfo": {
-    "hasNextPage": false
-  },
-  "total": 1
-}
-```
-
-### 3. Text Search (/text command)
-```typescript
-// Request
-{
-  "query": "/text deployment",
-  "limit": 10
-}
-
-// Response
-{
-  "items": [
-    {
-      "id": "msg_789",
-      "content": "New deployment process document",
-      "score": 1.0,  // Exact match score
-      "metadata": {
-        "channelId": "channel_456",
-        "userId": "user_123",
-        "timestamp": 1707824461
-      }
-    }
-  ],
-  "pageInfo": {
-    "hasNextPage": false
-  },
-  "total": 1
-}
-```
-
-### 4. RAG Search (/rag command)
-```typescript
-// Request
-{
-  "query": "/rag What were the recent deployment issues?",
-  "limit": 5
-}
-
-// Response
-{
-  "response": "Based on recent discussions, there were three main deployment issues: 1) Pod scheduling problems in production, 2) Resource limit constraints, and 3) Configuration mismatches between staging and production environments. The team implemented horizontal pod autoscaling and updated the resource quotas to address these issues.",
-  "type": "rag",
-  "context": {
-    "messages": [
-      {
-        "id": "msg_123",
-        "content": "Pod scheduling issues detected",
-        "score": 0.92
-      }
-    ],
-    "sourceCount": 1
-  }
-}
-```
-
-### 5. User-Specific Search (/from command)
-```typescript
-// Request
-{
-  "query": "/from user_123 deployment",
-  "limit": 5
-}
-
-// Response
-{
-  "items": [
-    {
-      "id": "msg_321",
-      "content": "Updated the deployment scripts",
-      "score": 0.88,
-      "metadata": {
-        "channelId": "channel_456",
-        "userId": "user_123",
-        "timestamp": 1707824461
-      }
-    }
-  ],
-  "pageInfo": {
-    "hasNextPage": false
-  },
-  "total": 1
-}
-```
-
-### 6. Thread Search (/thread command)
-```typescript
-// Request
-{
-  "query": "/thread msg_123",
-  "limit": 10
-}
-
-// Response
-{
-  "items": [
-    {
-      "id": "msg_123",
-      "content": "Initial deployment issue",
-      "metadata": {
-        "channelId": "channel_456",
-        "userId": "user_789",
-        "timestamp": 1707824461,
-        "threadId": "thread_123"
-      }
-    },
-    {
-      "id": "msg_124",
-      "content": "Reply with solution",
-      "metadata": {
-        "channelId": "channel_456",
-        "userId": "user_789",
-        "timestamp": 1707824462,
-        "threadId": "thread_123",
-        "replyToId": "msg_123"
-      }
-    }
-  ],
-  "pageInfo": {
-    "hasNextPage": false
-  },
-  "total": 2
-}
-```
-
-## Error Responses
-
-### 1. Authentication Error
+### UserInfo
 ```typescript
 {
-  "statusCode": 401,
-  "message": "Unauthorized",
-  "error": "No user ID provided"
+  id: string;
+  name: string;
+  avatar?: string;
+  role: string;
 }
 ```
 
-### 2. Invalid Query
+### ThreadInfo
 ```typescript
 {
-  "statusCode": 400,
-  "message": "Invalid search query",
-  "error": "Bad Request",
-  "details": {
-    "reason": "Query must be at least 3 characters"
-  }
+  threadId: string;
+  replyCount: number;
+  participantCount: number;
+  lastActivity: string;
+  status?: 'active' | 'resolved' | 'archived';
 }
 ```
 
-### 3. Invalid Command
+### MessageContent
 ```typescript
 {
-  "statusCode": 400,
-  "message": "Invalid command format",
-  "error": "Bad Request",
-  "details": {
-    "command": "unknown_command",
-    "supportedCommands": ["in", "text", "rag", "from", "thread"]
-  }
+  id: string;
+  content: string;
+  timestamp: string;
+  user: UserInfo;
+  edited: boolean;
+  deleted: boolean;
+  reactions?: Array<{
+    emoji: string;
+    count: number;
+    users: UserInfo[];
+  }>;
+  attachments?: Array<{
+    type: string;
+    url: string;
+    name: string;
+  }>;
 }
 ```
 
-## Pagination
+## Endpoints
 
-- Use `limit` to control page size
-- Use `cursor` from `pageInfo.endCursor` for next page
-- Check `pageInfo.hasNextPage` to determine if more results exist
+### 1. Semantic Search
+`POST /search/semantic`
 
-## Score Interpretation
+General-purpose semantic similarity search across all accessible content.
 
-- 0.9 - 1.0: Excellent match
-- 0.8 - 0.9: Good match
-- 0.7 - 0.8: Moderate match
-- < 0.7: Poor match
+#### Request
+```typescript
+{
+  query: string;              // Search query text
+  limit?: number;             // Default: 20
+  minScore?: number;          // Default: 0.6
+  cursor?: string;            // For pagination
+  dateRange?: {
+    start: string;           // ISO date
+    end: string;            // ISO date
+  };
+}
+```
+
+#### Response
+```typescript
+{
+  items: Array<{
+    id: string;              // Message ID
+    content: string;         // Message content
+    score: number;           // Similarity score (0-1)
+    timestamp: string;       // ISO date
+    user: UserInfo;         // Author info
+    channelId: string;      // Channel ID
+    channelName: string;    // Channel name
+    threadInfo?: {          // Optional if message is in thread
+      threadId: string;
+      replyCount: number;
+      isParent: boolean;
+    };
+    highlights?: Array<{    // Relevant text snippets
+      text: string;
+      score: number;
+    }>;
+  }>;
+  metadata: {
+    searchTime: number;     // MS taken
+    totalMatches: number;   // Before limit
+  };
+  pageInfo: PaginationInfo;
+}
+```
+
+### 2. Channel Search
+`POST /search/channel/{channelId}`
+
+Comprehensive search within a channel, including all messages and their associated threads.
+
+#### Request
+```typescript
+{
+  query: string;              // Search query
+  limit?: number;             // Default: 50
+  minScore?: number;          // Default: 0.5
+  cursor?: string;           
+  dateRange?: {
+    start: string;
+    end: string;
+  };
+  sortBy?: 'relevance' | 'date';  // Default: relevance
+  threadOptions?: {
+    include: boolean;         // Include thread messages in search
+    expand: boolean;          // Auto-expand relevant threads
+    maxReplies?: number;      // Max thread replies to return
+    scoreThreshold?: number;  // Min score for thread inclusion
+  };
+  filters?: {
+    messageTypes?: Array<'message' | 'thread_reply' | 'file_share' | 'code_snippet'>;
+    hasAttachments?: boolean;
+    hasReactions?: boolean;
+    fromUsers?: string[];
+    excludeUsers?: string[];
+  };
+}
+```
+
+#### Response
+```typescript
+{
+  items: Array<{
+    message: MessageContent & {
+      score: number;          // Relevance score (0-1)
+      highlights?: Array<{    // Relevant text snippets
+        text: string;
+        score: number;
+      }>;
+      threadInfo?: ThreadInfo;
+      thread?: {              // Present if message has thread
+        replies: Array<MessageContent & {
+          score?: number;     // Present if reply matches search
+          replyTo?: string;   // ID of message being replied to
+        }>;
+        analytics?: {
+          averageResponseTime: number;
+          peakActivityTime: string;
+          participationDistribution: {
+            [userId: string]: number;
+          };
+        };
+      };
+    };
+    context?: {              // Surrounding conversation context
+      before: Array<MessageContent>;
+      after: Array<MessageContent>;
+    };
+  }>;
+  channelInfo: {
+    id: string;
+    name: string;
+    description?: string;
+    memberCount: number;
+    lastActivity: string;
+    type: 'public' | 'private';
+  };
+  metadata: {
+    searchTime: number;
+    totalMatches: number;
+    threadMatches: number;    // Number of matching thread messages
+    searchDepth: {
+      messagesScanned: number;
+      threadsScanned: number;
+    };
+  };
+  pageInfo: PaginationInfo;
+}
+```
+
+### 3. User Search
+`POST /search/user/{userId}`
+
+Search messages from a specific user across channels.
+
+#### Request
+```typescript
+{
+  query: string;
+  limit?: number;             // Default: 30
+  channelId?: string;         // Optional channel filter
+  includeThreads?: boolean;   // Default: true
+  cursor?: string;
+  dateRange?: {
+    start: string;
+    end: string;
+  };
+  messageTypes?: Array<      // Filter by message type
+    'message' | 
+    'thread_reply' | 
+    'file_share' | 
+    'code_snippet'
+  >;
+}
+```
+
+#### Response
+```typescript
+{
+  items: Array<{
+    id: string;
+    content: string;
+    score: number;
+    timestamp: string;
+    channelId: string;
+    channelName: string;
+    threadInfo?: ThreadInfo;
+    messageType: string;
+    engagement: {           // User-specific engagement metrics
+      replyCount: number;
+      reactionCount: number;
+      viewCount: number;
+    };
+    context?: {            // Surrounding message context
+      before: string;
+      after: string;
+    };
+  }>;
+  userInfo: {
+    id: string;
+    name: string;
+    role: string;
+    joinDate: string;
+    activeChannels: Array<{
+      id: string;
+      name: string;
+      messageCount: number;
+    }>;
+    statistics: {
+      totalMessages: number;
+      threadsStarted: number;
+      repliesReceived: number;
+      averageResponseTime: number;
+    };
+  };
+  pageInfo: PaginationInfo;
+}
+```
+
+### 4. RAG Search
+`POST /search/rag`
+
+Generate AI responses using relevant context.
+
+#### Request
+```typescript
+{
+  query: string;
+  contextLimit?: number;      // Default: 5
+  minContextScore?: number;   // Default: 0.7
+  channelId?: string;         // Optional context scope
+  dateRange?: {
+    start: string;
+    end: string;
+  };
+  responseFormat?: {
+    maxLength?: number;
+    style?: 'concise' | 'detailed';
+    includeQuotes?: boolean;
+  };
+}
+```
+
+#### Response
+```typescript
+{
+  response: string;           // Generated response
+  sourcedContexts: Array<{
+    content: string;
+    score: number;
+    source: {
+      messageId: string;
+      channelId: string;
+      channelName: string;
+      user: UserInfo;
+      timestamp: string;
+      threadInfo?: ThreadInfo;
+    };
+    relevanceExplanation?: string;  // Why this context was chosen
+  }>;
+  metadata: {
+    tokensUsed: number;
+    processingTime: number;
+    contextQuality: number;   // 0-1 score of context relevance
+    modelConfidence: number;  // 0-1 score of response confidence
+    followupQuestions?: string[];  // Suggested follow-up questions
+  };
+  debug?: {                  // Optional debug information
+    promptTokens: number;
+    completionTokens: number;
+    totalCost: number;
+    contextSelectionStrategy: string;
+    modelParameters: {
+      temperature: number;
+      topP: number;
+      maxTokens: number;
+    };
+  };
+}
+```
+
+## Error Handling
+
+All endpoints use standard HTTP status codes and return errors in this format:
+
+```typescript
+{
+  error: {
+    code: string;
+    message: string;
+    details?: any;
+    requestId?: string;
+  };
+}
+```
+
+Common error codes:
+- `invalid_request`: Malformed request
+- `not_found`: Resource not found
+- `permission_denied`: Unauthorized access
+- `rate_limited`: Too many requests
+- `context_not_found`: No relevant context (RAG)
+- `generation_failed`: AI generation failed (RAG)
 
 ## Rate Limiting
 
-- 100 requests per minute per user
-- 1000 requests per hour per user
-- RAG queries count as 5 regular queries
+- Default: 100 requests per minute per user
+- RAG endpoints: 20 requests per minute per user
+- Bulk operations: 5 requests per minute per user
 
-## Best Practices
+## Authentication
 
-1. **Query Construction**:
-   - Use specific commands for specific needs
-   - Prefer semantic search for concept matching
-   - Use text search for exact matches
-   - Use RAG for summarization or analysis
+All endpoints require a valid JWT token in the Authorization header:
+```
+Authorization: Bearer <token>
+```
 
-2. **Performance**:
-   - Keep `limit` reasonable (5-20)
-   - Use channel filters when possible
-   - Cache common searches client-side
+## Versioning
 
-3. **Error Handling**:
-   - Always check response status
-   - Implement retry logic for 429 (Rate Limit)
-   - Handle 401/403 with auth refresh 
+The API is versioned through the URL:
+```
+https://api.example.com/v1/search/*
+``` 
