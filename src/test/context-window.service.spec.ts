@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ContextWindowService } from '../lib/context-window.service';
-import { VectorStoreService, SearchResult } from '../lib/vector-store.service';
+import { VectorStoreService } from '../lib/vector-store.service';
+import { SearchResult } from '../modules/search/types';
 import { jest } from '@jest/globals';
 
 describe('ContextWindowService', () => {
@@ -17,10 +18,20 @@ describe('ContextWindowService', () => {
         timestamp: new Date().toISOString(),
         channelId: 'channel1'
       },
+      user: {
+        id: 'user1',
+        name: 'Test User',
+        role: 'USER'
+      },
       score: 0.9
     }],
     total: 1,
-    hasMore: false
+    hasMore: false,
+    nextCursor: null
+  };
+
+  const mockVectorStore = {
+    findSimilarMessages: jest.fn<() => Promise<SearchResult>>().mockResolvedValue(mockSearchResult)
   };
 
   beforeEach(async () => {
@@ -29,9 +40,7 @@ describe('ContextWindowService', () => {
         ContextWindowService,
         {
           provide: VectorStoreService,
-          useValue: {
-            findSimilarMessages: jest.fn().mockResolvedValue(mockSearchResult)
-          }
+          useValue: mockVectorStore
         }
       ],
     }).compile();

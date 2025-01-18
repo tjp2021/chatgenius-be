@@ -99,11 +99,12 @@ export class AiService implements OnModuleInit {
       const style = analysisData.messageAnalysis.analysis;
 
       // Find relevant context
-      const similarMessages = await this.vectorStore.findSimilarMessages(prompt);
+      const searchResult = await this.vectorStore.findSimilarMessages(prompt);
+      const messages = searchResult.messages || [];
       
       // Group messages by thread and include parent messages
       const threadGroups = new Map<string, { messages: any[], score: number }>();
-      similarMessages.forEach(msg => {
+      messages.forEach(msg => {
         const threadId = msg.metadata?.replyTo || msg.id;
         const existing = threadGroups.get(threadId) || { messages: [], score: 0 };
         existing.messages.push(msg);
@@ -221,13 +222,11 @@ Generate a response that matches these exact style characteristics. The response
 
   async synthesizeResponse(channelId: string, prompt: string) {
     try {
-      // Get relevant messages from vector store
-      const similarMessages = await this.vectorStore.findSimilarMessages(prompt, {
-        topK: 5,
-        minScore: 0.7
-      });
+      // Get relevant messages
+      const searchResult = await this.vectorStore.findSimilarMessages(prompt);
+      const messages = searchResult.messages || [];
 
-      if (similarMessages.length === 0) {
+      if (messages.length === 0) {
         return {
           response: "I couldn't find any relevant context to answer your question.",
           contextMessageCount: 0
@@ -235,7 +234,7 @@ Generate a response that matches these exact style characteristics. The response
       }
 
       // Format messages for context
-      const contextMessages = similarMessages
+      const contextMessages = messages
         .map(msg => `[${msg.metadata?.timestamp || 'unknown'}] ${msg.content}`)
         .join('\n');
 
@@ -265,7 +264,7 @@ Please provide a specific answer based on the context provided. If the context c
 
       return {
         response: completion.choices[0].message?.content || 'No response generated',
-        contextMessageCount: similarMessages.length
+        contextMessageCount: messages.length
       };
     } catch (error) {
       this.logger.error('Error generating response:', error);

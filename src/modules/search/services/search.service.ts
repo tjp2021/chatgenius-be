@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { VectorStoreService } from '../../../lib/vector-store.service';
 import { ResponseSynthesisService } from '../../../lib/response-synthesis.service';
-import { MessageContent, SearchOptions, SearchResponse, RAGResponse, VectorResults } from '../types';
+import { MessageContent, SearchOptions, SearchResponse, RAGResponse } from '../types';
 
 @Injectable()
 export class SearchService {
@@ -26,10 +26,9 @@ export class SearchService {
       thread: msg.metadata.threadInfo ? {
         threadId: msg.metadata.replyTo || msg.id,
         replyCount: msg.metadata.threadInfo.replyCount,
-        participantCount: 1, // TODO: Calculate actual participant count
+        participantCount: 1,
         lastActivity: msg.metadata.timestamp,
-        status: 'active',
-        latestReplies: msg.metadata.threadInfo.latestReplies?.map(reply => this.mapToMessageContent(reply))
+        latestReplies: msg.metadata.threadInfo.latestReplies?.map(reply => this.mapToMessageContent(reply)) || []
       } : undefined
     };
   }
@@ -210,8 +209,7 @@ export class SearchService {
         ...response,
         metadata: {
           searchTime: Date.now() - startTime,
-          contextQuality: results.messages.length > 0 ? 
-            results.messages[0].score : 0
+          contextQuality: results.messages[0]?.score || 0
         }
       };
     } catch (error) {

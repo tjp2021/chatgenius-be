@@ -118,79 +118,73 @@ export class ContextWindowService {
 
     try {
       // Get messages using vector similarity
-      const vectorResults = await this.vectorStore.findSimilarMessages(prompt, {
+      const searchResult = await this.vectorStore.findSimilarMessages(prompt, {
         channelIds: includeRelatedChannels ? undefined : [channelId],
         minScore
-      }) as VectorResult[];
+      });
+
+      if (!searchResult?.messages) {
+        this.logger.warn('No messages found in search result');
+        return result;
+      }
 
       // Track thread messages for inclusion
       const threadMessages = new Set<string>();
-      for (const vectorResult of vectorResults) {
+      for (const message of searchResult.messages) {
         // Add messages that meet score threshold
-        if (vectorResult.score >= minScore) {
-          threadMessages.add(vectorResult.id);
+        if (message.score >= minScore) {
+          threadMessages.add(message.id);
         }
         // Add messages that are part of threads
-        if (vectorResult.metadata.replyTo) {
-          threadMessages.add(vectorResult.metadata.replyTo);
-          threadMessages.add(vectorResult.id);
+        if (message.metadata.replyTo) {
+          threadMessages.add(message.metadata.replyTo);
+          threadMessages.add(message.id);
         }
       }
 
       // Process messages in order
-      for (const vectorResult of vectorResults) {
+      for (const message of searchResult.messages) {
         // Skip messages below minimum score unless they're part of a thread
-        if (vectorResult.score < minScore && !threadMessages.has(vectorResult.id)) {
+        if (message.score < minScore && !threadMessages.has(message.id)) {
           continue;
         }
 
-        const message = await this.getMessageContent(vectorResult.id);
-        if (!message) continue;
+        const messageContent = await this.getMessageContent(message.id);
+        if (!messageContent) continue;
 
         // Calculate total tokens needed
-        const messageTokens = this.estimateTokens(message.content);
-        const parentTokens = vectorResult.context?.parentMessage 
-          ? this.estimateTokens(vectorResult.context.parentMessage.metadata.content)
+        const messageTokens = this.estimateTokens(messageContent.content);
+        const parentTokens = message.metadata.replyTo 
+          ? this.estimateTokens(message.metadata.replyTo)
           : 0;
         const totalTokens = messageTokens + parentTokens;
 
         // Check token limit - break if this message would exceed it
         if (result.totalTokens + totalTokens > maxTokens) {
-          this.logger.debug(`Breaking at message ${vectorResult.id} as it would exceed token limit (${result.totalTokens + totalTokens} > ${maxTokens})`);
+          this.logger.debug(`Breaking at message ${message.id} as it would exceed token limit (${result.totalTokens + totalTokens} > ${maxTokens})`);
           break;
         }
 
         // Add message
-        result.channels.add(message.channelId);
+        result.channels.add(messageContent.channelId);
 
         // Calculate boosted score
-        const baseScore = vectorResult.score;
-        const channelBoost = message.channelId === channelId ? 1.5 : 1.0;
-        const threadBoost = threadMessages.has(vectorResult.id) ? 1.3 : 1.0;
+        const baseScore = message.score;
+        const channelBoost = messageContent.channelId === channelId ? 1.5 : 1.0;
+        const threadBoost = threadMessages.has(message.id) ? 1.3 : 1.0;
         const boostedScore = baseScore * channelBoost * threadBoost;
 
         const contextMessage: ContextMessage = {
-          id: vectorResult.id,
-          content: message.content,
-          createdAt: message.createdAt,
-          channelId: message.channelId,
+          id: message.id,
+          content: messageContent.content,
+          createdAt: messageContent.createdAt,
+          channelId: messageContent.channelId,
           score: boostedScore,
-          originalScore: vectorResult.metadata.originalScore,
-          timeScore: vectorResult.metadata.timeScore,
+          originalScore: message.metadata.scores?.semantic || message.score,
+          timeScore: message.metadata.scores?.time || 1,
           channelScore: channelBoost,
           threadScore: threadBoost
         };
-
-        // Add parent message context if available
-        if (vectorResult.context?.parentMessage) {
-          contextMessage.context = {
-            parentMessage: {
-              id: vectorResult.context.parentMessage.id,
-              content: vectorResult.context.parentMessage.metadata.content,
-              channelId: vectorResult.context.parentMessage.metadata.channelId
-            }
-          };
-        }
 
         result.messages.push(contextMessage);
         result.totalTokens += totalTokens;

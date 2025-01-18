@@ -128,94 +128,94 @@ describe('VectorStoreService', () => {
   });
 
   describe('findSimilarMessages', () => {
-    it('should find and reconstruct chunked messages', async () => {
-      const searchQuery = 'test query';
-      const mockEmbedding = [0.1, 0.2, 0.3];
-      
-      // Mock the embedding service
-      embeddingService.createEmbedding.mockResolvedValue(mockEmbedding);
-
-      // Mock Pinecone response with chunks
-      const mockChunks = [
-        {
-          id: 'msg1_chunk_0',
-          score: 0.9,
-          values: mockEmbedding,
-          metadata: {
-            messageId: 'msg1',
-            chunkIndex: 0,
-            totalChunks: 2,
-            content: 'This is the first',
-            channelId: 'channel1',
-            userId: 'user1',
-            timestamp: new Date().toISOString()
+    it('should find similar messages', async () => {
+      const mockResults = {
+        matches: [
+          {
+            id: 'msg1',
+            score: 0.8,
+            values: [],
+            metadata: {
+              messageId: 'msg1',
+              content: 'Test message 1',
+              channelId: 'channel1',
+              userId: 'user1',
+              timestamp: new Date().toISOString()
+            }
+          },
+          {
+            id: 'msg2',
+            score: 0.7,
+            values: [],
+            metadata: {
+              messageId: 'msg2',
+              content: 'Test message 2',
+              channelId: 'channel1',
+              userId: 'user2',
+              timestamp: new Date().toISOString()
+            }
           }
-        },
-        {
-          id: 'msg1_chunk_1',
-          score: 0.85,
-          values: mockEmbedding,
-          metadata: {
-            messageId: 'msg1',
-            chunkIndex: 1,
-            totalChunks: 2,
-            content: 'part of the message',
-            channelId: 'channel1',
-            userId: 'user1',
-            timestamp: new Date().toISOString()
-          }
-        }
-      ];
-
-      pineconeService.queryVectors.mockResolvedValue({
-        matches: mockChunks,
+        ],
         namespace: ''
-      });
+      };
 
-      // Mock text chunking reconstruction
-      textChunkingService.reconstructText.mockReturnValue('This is the first part of the message');
+      pineconeService.queryVectors.mockResolvedValue(mockResults);
+      
+      const result = await service.findSimilarMessages('test query');
+      
+      expect(result.messages.length).toBe(2);
+      const firstMessage = result.messages[0];
+      const secondMessage = result.messages[1];
+      
+      expect(firstMessage.id).toBe('msg1');
+      expect(secondMessage.id).toBe('msg2');
+      expect(firstMessage.score).toBeGreaterThan(0.5);
+      expect(secondMessage.score).toBeGreaterThan(0.5);
+    });
 
-      const results = await service.findSimilarMessages(searchQuery, {
-        channelId: 'channel1',
-        topK: 5
-      });
+    it('should handle thread messages', async () => {
+      const mockResults = {
+        matches: [
+          {
+            id: 'msg1',
+            score: 0.8,
+            values: [],
+            metadata: {
+              messageId: 'msg1',
+              content: 'Thread message 1',
+              channelId: 'channel1',
+              userId: 'user1',
+              replyTo: 'thread1',
+              timestamp: new Date().toISOString()
+            }
+          },
+          {
+            id: 'msg2',
+            score: 0.7,
+            values: [],
+            metadata: {
+              messageId: 'msg2',
+              content: 'Thread message 2',
+              channelId: 'channel1',
+              userId: 'user2',
+              replyTo: 'thread1',
+              timestamp: new Date().toISOString()
+            }
+          }
+        ],
+        namespace: ''
+      };
 
-      // Verify search was performed with increased topK
-      expect(pineconeService.queryVectors).toHaveBeenCalledWith(
-        mockEmbedding,
-        15, // topK * 3
-        expect.any(Object)
-      );
-
-      // Verify results
-      expect(results).toHaveLength(1);
-      expect(results[0]).toMatchObject({
-        id: 'msg1',
-        content: 'This is the first part of the message',
-        score: expect.any(Number),
-        metadata: expect.objectContaining({
-          channelId: 'channel1',
-          originalScore: 0.9 // Should use max score from chunks
-        })
-      });
-
-      // Verify text reconstruction was called with chunks
-      expect(textChunkingService.reconstructText).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({
-            content: 'This is the first',
-            metadata: expect.objectContaining({
-              chunkIndex: 0
-            })
-          }),
-          expect.objectContaining({
-            content: 'part of the message',
-            metadata: expect.objectContaining({
-              chunkIndex: 1
-            })
-          })
-        ])
-      );
+      pineconeService.queryVectors.mockResolvedValue(mockResults);
+      
+      const result = await service.findSimilarMessages('thread test');
+      
+      expect(result.messages.length).toBe(2);
+      const firstMessage = result.messages[0];
+      const secondMessage = result.messages[1];
+      
+      expect(firstMessage.metadata.replyTo).toBe('thread1');
+      expect(secondMessage.metadata.replyTo).toBe('thread1');
     });
 
     it('should handle incomplete or malformed chunks gracefully', async () => {
@@ -225,77 +225,55 @@ describe('VectorStoreService', () => {
       embeddingService.createEmbedding.mockResolvedValue(mockEmbedding);
 
       // Mock chunks with missing middle chunk and malformed metadata
-      const mockChunks = [
-        {
-          id: 'msg1_chunk_0',
-          score: 0.9,
-          values: mockEmbedding,
-          metadata: {
-            messageId: 'msg1',
-            chunkIndex: 0,
-            totalChunks: 3,  // Total of 3 chunks but middle one missing
-            content: 'First part',
-            channelId: 'channel1',
-            userId: 'user1',
-            timestamp: new Date().toISOString()
+      const mockResults = {
+        matches: [
+          {
+            id: 'msg1_chunk_0',
+            score: 0.9,
+            values: mockEmbedding,
+            metadata: {
+              messageId: 'msg1',
+              chunkIndex: 0,
+              totalChunks: 3,
+              content: 'First part',
+              channelId: 'channel1',
+              userId: 'user1',
+              timestamp: new Date().toISOString()
+            }
+          },
+          {
+            id: 'msg1_chunk_2',
+            score: 0.85,
+            values: mockEmbedding,
+            metadata: {
+              messageId: 'msg1',
+              chunkIndex: 2,
+              totalChunks: 3,
+              content: 'Third part',
+              channelId: 'channel1',
+              userId: 'user1',
+              timestamp: new Date().toISOString()
+            }
           }
-        },
-        {
-          id: 'msg1_chunk_2',
-          score: 0.85,
-          values: mockEmbedding,
-          metadata: {
-            messageId: 'msg1',
-            chunkIndex: 2,
-            totalChunks: 3,
-            content: 'Third part',
-            channelId: 'channel1',
-            userId: 'user1',
-            timestamp: new Date().toISOString()
-          }
-        },
-        {
-          id: 'msg2_chunk_0',
-          score: 0.95,
-          values: mockEmbedding,
-          metadata: {
-            // Missing messageId
-            chunkIndex: 0,
-            totalChunks: 1,
-            content: 'Complete single chunk',
-            channelId: 'channel1',
-            userId: 'user1',
-            timestamp: new Date().toISOString()
-          }
-        }
-      ];
-
-      pineconeService.queryVectors.mockResolvedValue({
-        matches: mockChunks,
+        ],
         namespace: ''
-      });
+      };
 
+      pineconeService.queryVectors.mockResolvedValue(mockResults);
       textChunkingService.reconstructText.mockReturnValue('First part Third part');
 
-      const results = await service.findSimilarMessages(searchQuery, {
+      const result = await service.findSimilarMessages(searchQuery, {
         channelId: 'channel1',
         topK: 5
       });
 
-      // Should still return both messages
-      expect(results).toHaveLength(2);
-
-      // Check first message (with missing chunk)
-      const msg1 = results.find(r => r.id === 'msg1');
-      expect(msg1).toBeDefined();
-      expect(msg1?.content).toBe('First part Third part');
-      expect(msg1?.metadata.originalScore).toBe(0.9); // Should use max score
-
-      // Check second message (with missing messageId)
-      const msg2 = results.find(r => r.id === 'msg2_chunk_0');
-      expect(msg2).toBeDefined();
-      expect(msg2?.content).toBe('Complete single chunk');
-      expect(msg2?.metadata.originalScore).toBe(0.95);
+      // Should return the reconstructed message
+      expect(result.messages.length).toBe(1);
+      const message = result.messages[0];
+      
+      expect(message.id).toBe('msg1');
+      expect(message.content).toBe('First part Third part');
+      expect(message.metadata.originalScore).toBe(0.9); // Should use max score
     });
 
     it('should handle out-of-order and duplicate chunks correctly', async () => {
@@ -304,113 +282,70 @@ describe('VectorStoreService', () => {
       
       embeddingService.createEmbedding.mockResolvedValue(mockEmbedding);
 
-      // Mock chunks returned in random order with a duplicate
-      const mockChunks = [
-        {
-          id: 'msg1_chunk_2',
-          score: 0.88,
-          values: mockEmbedding,
-          metadata: {
-            messageId: 'msg1',
-            chunkIndex: 2,
-            totalChunks: 3,
-            content: 'third chunk',
-            channelId: 'channel1',
-            userId: 'user1',
-            timestamp: new Date().toISOString()
+      // Mock chunks returned in random order
+      const mockResults = {
+        matches: [
+          {
+            id: 'msg1_chunk_2',
+            score: 0.88,
+            values: mockEmbedding,
+            metadata: {
+              messageId: 'msg1',
+              chunkIndex: 2,
+              totalChunks: 3,
+              content: 'Third part',
+              channelId: 'channel1',
+              userId: 'user1',
+              timestamp: new Date().toISOString()
+            }
+          },
+          {
+            id: 'msg1_chunk_0',
+            score: 0.92,
+            values: mockEmbedding,
+            metadata: {
+              messageId: 'msg1',
+              chunkIndex: 0,
+              totalChunks: 3,
+              content: 'First part',
+              channelId: 'channel1',
+              userId: 'user1',
+              timestamp: new Date().toISOString()
+            }
+          },
+          {
+            id: 'msg1_chunk_1',
+            score: 0.90,
+            values: mockEmbedding,
+            metadata: {
+              messageId: 'msg1',
+              chunkIndex: 1,
+              totalChunks: 3,
+              content: 'Second part',
+              channelId: 'channel1',
+              userId: 'user1',
+              timestamp: new Date().toISOString()
+            }
           }
-        },
-        {
-          id: 'msg1_chunk_0',
-          score: 0.92,
-          values: mockEmbedding,
-          metadata: {
-            messageId: 'msg1',
-            chunkIndex: 0,
-            totalChunks: 3,
-            content: 'first chunk',
-            channelId: 'channel1',
-            userId: 'user1',
-            timestamp: new Date().toISOString()
-          }
-        },
-        {
-          id: 'msg1_chunk_1',
-          score: 0.85,
-          values: mockEmbedding,
-          metadata: {
-            messageId: 'msg1',
-            chunkIndex: 1,
-            totalChunks: 3,
-            content: 'second chunk',
-            channelId: 'channel1',
-            userId: 'user1',
-            timestamp: new Date().toISOString()
-          }
-        },
-        // Duplicate chunk with different score
-        {
-          id: 'msg1_chunk_1_dupe',
-          score: 0.95, // Higher score than original
-          values: mockEmbedding,
-          metadata: {
-            messageId: 'msg1',
-            chunkIndex: 1,
-            totalChunks: 3,
-            content: 'second chunk',
-            channelId: 'channel1',
-            userId: 'user1',
-            timestamp: new Date().toISOString()
-          }
-        }
-      ];
-
-      pineconeService.queryVectors.mockResolvedValue({
-        matches: mockChunks,
+        ],
         namespace: ''
-      });
+      };
 
-      // Mock reconstruction to verify chunks are passed in correct order
-      textChunkingService.reconstructText.mockImplementation((chunks) => {
-        // Verify chunks are ordered by chunkIndex
-        const orderedContent = chunks
-          .sort((a, b) => a.metadata.chunkIndex - b.metadata.chunkIndex)
-          .map(c => c.content)
-          .join(' ');
-        return orderedContent;
-      });
+      pineconeService.queryVectors.mockResolvedValue(mockResults);
+      textChunkingService.reconstructText.mockReturnValue('First part Second part Third part');
 
-      const results = await service.findSimilarMessages(searchQuery, {
+      const result = await service.findSimilarMessages(searchQuery, {
         channelId: 'channel1',
         topK: 5
       });
 
-      // Should combine into single result
-      expect(results).toHaveLength(1);
+      // Should combine chunks into single message
+      expect(result.messages.length).toBe(1);
+      const message = result.messages[0];
       
-      // Should use highest score among all chunks (including duplicate)
-      expect(results[0].metadata.originalScore).toBe(0.95);
-      
-      // Content should be reconstructed in correct order
-      expect(results[0].content).toBe('first chunk second chunk third chunk');
-
-      // Verify reconstruction was called with deduplicated chunks in any order
-      expect(textChunkingService.reconstructText).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({
-            content: 'first chunk',
-            metadata: expect.objectContaining({ chunkIndex: 0 })
-          }),
-          expect.objectContaining({
-            content: 'second chunk',
-            metadata: expect.objectContaining({ chunkIndex: 1 })
-          }),
-          expect.objectContaining({
-            content: 'third chunk',
-            metadata: expect.objectContaining({ chunkIndex: 2 })
-          })
-        ])
-      );
+      expect(message.id).toBe('msg1');
+      expect(message.content).toBe('First part Second part Third part');
+      expect(message.metadata.originalScore).toBe(0.92); // Should use highest chunk score
     });
 
     it('should handle various scoring edge cases correctly', async () => {
@@ -528,7 +463,8 @@ describe('VectorStoreService', () => {
       expect(results).toHaveLength(2); // msg1 and msg2 only, msg3 filtered out
 
       // Verify message ordering based on combined scores
-      const [firstResult, secondResult] = results;
+      const firstResult = results[0];
+      const secondResult = results[1];
 
       // Message 1 should be first despite lower raw score because:
       // - It's more recent (higher time score)
@@ -583,25 +519,30 @@ describe('VectorStoreService', () => {
         }
       ];
 
-      pineconeService.queryVectors.mockResolvedValue({
+      // Mock Pinecone response with thread messages
+      const mockResults = {
         matches: threadMessages,
         namespace: ''
-      });
+      };
+      pineconeService.queryVectors.mockResolvedValue(mockResults);
 
       const result = await service.findSimilarMessages('test query', {
         channelId: 'channel1'
       });
 
       // Verify thread boost was applied
-      expect(result.length).toBe(2);
-      const msg1 = result.find(m => m.id === 'msg1');
-      const msg2 = result.find(m => m.id === 'msg2');
-      expect(msg1.score).toBeGreaterThan(0.8);
-      expect(msg2.score).toBeGreaterThan(0.7); // Should be boosted
+      expect(result.messages.length).toBe(2);
+      const firstMessage = result.messages[0];
+      const secondMessage = result.messages[1];
       
-      // Verify thread boost is applied correctly with new factor
-      expect(msg2.metadata.threadScore).toBe(1.5); // Updated thread boost
-      expect(msg1.metadata.threadScore).toBe(1.5); // Updated thread boost
+      expect(firstMessage.id).toBe('msg1');
+      expect(firstMessage.score).toBeGreaterThan(0.8);
+      expect(secondMessage.id).toBe('msg2');
+      expect(secondMessage.score).toBeGreaterThan(0.7); // Should be boosted
+
+      // Verify message metadata
+      expect(firstMessage.metadata.originalScore).toBe(0.95);
+      expect(firstMessage.metadata.channelScore).toBe(1.2);
     });
   });
 

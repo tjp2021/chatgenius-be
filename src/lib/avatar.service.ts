@@ -112,8 +112,9 @@ ${messageTexts}`
       const analysisData = JSON.parse(avatar.analysis as string) as AvatarAnalysisData;
 
       // Find relevant context
-      const similarMessages = await this.vectorStore.findSimilarMessages(prompt);
-      const contextMessages = similarMessages.map(msg => msg.metadata?.content || '').join('\n');
+      const searchResult = await this.vectorStore.findSimilarMessages(prompt);
+      const messages = searchResult.messages || [];
+      const contextMessages = messages.map(msg => msg.metadata?.content || '').join('\n');
 
       // Generate response using style
       const response = await this.synthesis.synthesizeResponse({

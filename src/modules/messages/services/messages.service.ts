@@ -736,128 +736,40 @@ export class MessagesService {
       } : undefined
     });
 
-    const vectorResults = await this.vectorStoreService.findSimilarMessages(query, {
-      channelIds,
-      ...(cursorData && {
-        after: {
-          id: cursorData.id,
-          score: cursorData.score,
-          timestamp: cursorData.timestamp
-        }
-      })
+    const startTime = Date.now();
+    const searchResult = await this.vectorStoreService.findSimilarMessages(query, {
+      channelId,
+      minScore,
+      topK: limit
     });
 
-    console.log('🔍 [MessagesService] Vector search results:', {
-      resultsCount: vectorResults?.length,
-      firstResult: vectorResults?.[0] ? {
-        id: vectorResults[0].id,
-        score: vectorResults[0].score,
-        metadata: vectorResults[0].metadata
-      } : null
-    });
-
-    // Filter by minimum score
-    const filteredResults = vectorResults.filter(r => r.score >= minScore);
-
-    // If no results found, return empty array
-    if (!filteredResults.length) {
-      return {
-        items: [],
-        pageInfo: { hasNextPage: false },
-        total: 0
-      };
-    }
-
-    // If using cursor, start from the cursor position
-    let startIndex = 0;
-    if (cursor && cursorData) {
-      const cursorIndex = filteredResults.findIndex(r => r.id === cursorData.id);
-      if (cursorIndex !== -1) {
-        startIndex = cursorIndex + 1;
-      }
-    }
-
-    // Get the current page of results
-    const availablePageResults = filteredResults.slice(startIndex, startIndex + limit);
-
-    // Get full message details for the results
-    const messages = await this.prisma.message.findMany({
-      where: {
-        id: { in: availablePageResults.map(r => r.id) }
-      },
-      include: {
+    const filteredMessages = searchResult.messages
+      .filter(r => r.score >= minScore)
+      .map(msg => ({
+        ...msg,
+        channelId: msg.metadata.channelId,
+        userId: msg.metadata.userId,
+        createdAt: new Date(msg.metadata.timestamp),
+        updatedAt: new Date(msg.metadata.timestamp),
+        deliveryStatus: MessageDeliveryStatus.SENT,
+        replyToId: msg.metadata.replyTo || null,
+        vectorId: msg.id,
         user: {
-          select: {
-            id: true,
-            name: true,
-            imageUrl: true,
-          },
-        },
-        replyTo: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                imageUrl: true,
-              },
-            },
-          },
-        },
-      }
-    });
+          id: msg.metadata.userId,
+          name: msg.metadata.userName || 'Unknown',
+          imageUrl: null
+        }
+      }));
 
-    console.log('🔍 [MessagesService] Messages found in database:', {
-      count: messages.length,
-      ids: messages.map(m => m.id),
-      vectorIds: availablePageResults.map(r => r.id)
-    });
-
-    // If no messages found, return empty result
-    if (messages.length === 0) {
-      return {
-        items: [],
-        pageInfo: { hasNextPage: false },
-        total: 0
-      };
-    }
-
-    // Combine message details with search scores
-    const items: MessageSearchResult[] = messages.map(message => {
-      const vectorResult = availablePageResults.find(r => r.id === message.id);
-      return {
-        ...message,
-        score: vectorResult?.score ?? 0,
-        user: message.user,
-        replyTo: message.replyTo ?? undefined
-      };
-    });
-
-    // Check if there are more results after this page
-    const hasNextPage = filteredResults.length > (startIndex + items.length);
-
-    // Generate cursor for last item if there are more results
-    let endCursor: string | undefined;
-    if (items.length > 0 && hasNextPage) {
-      const lastItem = items[items.length - 1];
-      const lastVector = availablePageResults.find(r => r.id === lastItem.id)!;
-      
-      const cursorData: MessageCursor = {
-        id: lastItem.id,
-        score: lastVector.score,
-        timestamp: lastItem.createdAt.toISOString()
-      };
-      
-      endCursor = Buffer.from(JSON.stringify(cursorData)).toString('base64');
-    }
+    const searchTime = Date.now() - startTime;
 
     return {
-      items,
+      items: filteredMessages,
       pageInfo: {
-        hasNextPage,
-        endCursor
+        hasNextPage: searchResult.hasMore,
+        endCursor: searchResult.nextCursor
       },
-      total: filteredResults.length
+      total: filteredMessages.length
     };
   }
 } 
