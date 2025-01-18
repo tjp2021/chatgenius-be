@@ -372,12 +372,19 @@ export class VectorStoreService {
       }
     }> = [];
 
+    // Set minimum semantic score threshold
+    const MIN_SEMANTIC_SCORE = 0.7;
+
     for (const match of results.matches) {
       const content = match.metadata.content as string;
       if (!this.isValidContent(content)) continue;
 
       // Calculate component scores
       const semanticScore = match.score;
+      
+      // Skip if semantic score is too low - this is the key change
+      if (semanticScore < MIN_SEMANTIC_SCORE) continue;
+
       const timeScore = this.calculateTimeScore(match.metadata.timestamp as string);
       const channelScore = this.calculateChannelScore(
         match.metadata.channelId as string, 
@@ -386,13 +393,16 @@ export class VectorStoreService {
       const threadScore = match.metadata.replyTo ? 
         this.calculateThreadScore(match.metadata.messageId as string, [match.metadata.replyTo as string]) : 1;
 
-      // Calculate weighted average score
+      // Calculate weighted average score with higher weight on semantic relevance
       const finalScore = (
-        semanticScore * this.WEIGHTS.semantic +
-        timeScore * this.WEIGHTS.time +
-        channelScore * this.WEIGHTS.channel +
-        threadScore * this.WEIGHTS.thread
+        semanticScore * 0.8 +  // Increased weight for semantic relevance
+        timeScore * 0.1 +     // Reduced weight for time
+        channelScore * 0.05 + // Reduced weight for channel
+        threadScore * 0.05    // Reduced weight for thread
       );
+
+      // Skip if final score is below minimum
+      if (finalScore < minScore) continue;
 
       const message = {
         id: match.metadata.messageId as string,
@@ -414,7 +424,7 @@ export class VectorStoreService {
         }
       };
 
-      // Only add if not a duplicate
+      // Only add if not a duplicate and meets score threshold
       if (!this.isDuplicate(message, processedMessages)) {
         processedMessages.push(message);
         if (processedMessages.length >= limit) break;
@@ -424,18 +434,21 @@ export class VectorStoreService {
     // Sort by final score after all calculations
     processedMessages.sort((a, b) => b.score - a.score);
 
+    // Only include messages that meet the minimum score requirement
+    const validMessages = processedMessages.filter(msg => msg.score >= minScore);
+
     return {
-      messages: processedMessages,
-      total: processedMessages.length,
+      messages: validMessages,
+      total: validMessages.length,
       hasMore: results.matches.length > processedMessages.length,
       nextCursor: results.matches.length > processedMessages.length ? results.matches[limit].id : undefined,
       metadata: {
         searchTime: Date.now() - startTime,
         scoreFactors: {
-          semantic: 'Base relevance to query',
-          time: `Exponential decay (factor: ${this.TIME_DECAY_FACTOR})`,
-          channel: `Channel boost: ${this.CHANNEL_BOOST_FACTOR}x`,
-          thread: `Thread boost: ${this.THREAD_BOOST_FACTOR}x`
+          semantic: 'Base relevance to query (80% weight)',
+          time: `Time decay (10% weight, factor: ${this.TIME_DECAY_FACTOR})`,
+          channel: `Channel boost (5% weight): ${this.CHANNEL_BOOST_FACTOR}x`,
+          thread: `Thread boost (5% weight): ${this.THREAD_BOOST_FACTOR}x`
         }
       }
     };

@@ -183,33 +183,65 @@ export class SearchService {
   }): Promise<RAGResponse> {
     try {
       const startTime = Date.now();
+      const minScore = params.minContextScore || 0.7;
       
       // 1. Get relevant messages
       const results = await this.vectorStore.findSimilarMessages(params.query, {
         channelId: params.channelId,
         topK: params.contextLimit || 5,
-        minScore: params.minContextScore || 0.7,
+        minScore,
         dateRange: params.dateRange
       });
 
-      // 2. Format context
-      const context = results.messages
+      // Filter out low quality matches and verify semantic relevance
+      const relevantMessages = results.messages.filter(msg => {
+        // Must meet minimum score threshold
+        if (msg.score < minScore) return false;
+        
+        // Must have high semantic relevance
+        if (msg.metadata.scores?.semantic < 0.8) return false;
+
+        // Basic keyword check for extremely unrelated content
+        const keywords = params.query.toLowerCase().split(' ');
+        const content = msg.content.toLowerCase();
+        const hasRelevantKeywords = keywords.some(word => 
+          word.length > 3 && content.includes(word)
+        );
+        
+        return hasRelevantKeywords;
+      });
+
+      const hasRelevantContext = relevantMessages.length > 0;
+
+      // 2. Format context and prepare prompt
+      const context = relevantMessages
         .map(msg => `${msg.metadata.userName || 'Unknown'}: ${msg.content}`)
         .join('\n\n');
+
+      const prompt = hasRelevantContext ? 
+        `Based on the following context, answer this question:
+         Context: ${context}
+         Question: ${params.query}` :
+        `Note: No relevant messages were found in the chat history for this query.
+         Please provide a general response to this question:
+         Question: ${params.query}`;
 
       // 3. Generate response
       const response = await this.responseSynthesis.synthesizeResponse({
         channelId: params.channelId || 'rag-response',
-        prompt: `Based on the following context, answer this question:
-                Context: ${context}
-                Question: ${params.query}`
+        prompt
       });
 
+      // 4. Prepare response with accurate context information
       return {
-        ...response,
+        response: hasRelevantContext ? 
+          response.response :
+          `Note: No relevant messages were found in the chat history. Here's a general response:\n\n${response.response}`,
+        contextMessageCount: relevantMessages.length,
         metadata: {
           searchTime: Date.now() - startTime,
-          contextQuality: results.messages[0]?.score || 0
+          contextQuality: hasRelevantContext ? 
+            relevantMessages[0].metadata.scores?.semantic || 0 : 0
         }
       };
     } catch (error) {
