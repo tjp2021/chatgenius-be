@@ -20,8 +20,8 @@ export class SearchService {
       score: msg.score,
       user: {
         id: msg.metadata.userId,
-        name: msg.metadata.userName || 'Unknown',
-        role: 'user'
+        name: msg.metadata.userName || msg.user?.name || 'Unknown',
+        role: msg.user?.role || 'user'
       },
       thread: msg.metadata.threadInfo ? {
         threadId: msg.metadata.replyTo || msg.id,

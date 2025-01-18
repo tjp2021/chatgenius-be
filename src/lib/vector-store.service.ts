@@ -100,6 +100,17 @@ export interface SearchResult {
   };
 }
 
+interface UserMetadata {
+  id: string;
+  name?: string;
+  role?: string;
+}
+
+interface ExtendedMetadata extends MessageMetadata {
+  user?: UserMetadata;
+  userName?: string;
+}
+
 @Injectable()
 export class VectorStoreService {
   // Decay factor for time-based scoring (can be adjusted)
@@ -413,7 +424,16 @@ export class VectorStoreService {
           userId: match.metadata.userId as string,
           timestamp: match.metadata.timestamp as string,
           replyTo: match.metadata.replyTo as string | undefined,
-          userName: match.metadata.userName as string | undefined,
+          userName: (match.metadata as ExtendedMetadata).userName || 
+                   (match.metadata as ExtendedMetadata).user?.name || 
+                   'Unknown',
+          user: {
+            id: match.metadata.userId as string,
+            name: (match.metadata as ExtendedMetadata).userName || 
+                  (match.metadata as ExtendedMetadata).user?.name || 
+                  'Unknown',
+            role: (match.metadata as ExtendedMetadata).user?.role || 'user'
+          },
           scores: {
             semantic: semanticScore,
             time: timeScore,
